@@ -60,8 +60,10 @@ Chromatogram <- R6Class("Chromatogram",
       invisible(self)
     },
 
-    auc = function() {
-      pracma::trapz(self$time, self$intensity)
+    auc = function(use = c("raw", "smoothed")) {
+      use <- match.arg(use)
+      y <- if (use == "smoothed" && !is.null(self$smoothed)) self$smoothed else self$intensity
+      pracma::trapz(self$time, y)
     },
 
     # NOTE: thresholds are in *minutes* (distance/width) and absolute intensity for height
@@ -181,6 +183,57 @@ Chromatogram <- R6Class("Chromatogram",
 
     self$peaks <- res
     invisible(self)
+  },
+
+  plot = function(save_path = NULL) {
+    df <- data.frame(time = self$time, intensity = self$intensity)
+    p <- ggplot2::ggplot(df, ggplot2::aes(x = time, y = intensity)) +
+      ggplot2::geom_line(linewidth = 0.9) +
+      ggplot2::labs(x = "Time (min)", y = "Intensity") +
+      ggplot2::theme_classic(base_size = 13)
+
+    if (!is.null(self$smoothed)) {
+      df$smoothed <- self$smoothed
+      p <- p + ggplot2::geom_line(data = df, ggplot2::aes(y = smoothed),
+                                  linewidth = 0.8, linetype = "dashed", color = "blue")
+    }
+
+    if (!is.null(self$fit_params)) {
+      gaussian <- function(x, a, b, c) a * exp(-((x - b)^2) / (2 * c^2))
+      df$fit <- gaussian(df$time, self$fit_params["a"], self$fit_params["b"], self$fit_params["c"])
+      p <- p + ggplot2::geom_line(data = df, ggplot2::aes(y = fit),
+                                  linewidth = 0.8, linetype = "dotted", color = "red")
+    }
+
+    if (!is.null(self$peaks) && nrow(self$peaks) > 0) {
+      p <- p + ggplot2::geom_vline(data = self$peaks, ggplot2::aes(xintercept = time),
+                                   linetype = "dotted", linewidth = 0.6, color = "gray40")
+    }
+
+    if (!is.null(save_path)) {
+      dir.create(dirname(save_path), recursive = TRUE, showWarnings = FALSE)
+      ggplot2::ggsave(save_path, plot = p, width = 7, height = 5, dpi = 300)
+    }
+
+    p
+  },
+
+  summarize_peaks = function() {
+    if (is.null(self$peaks) || !nrow(self$peaks)) {
+      cat("No peaks detected.\n")
+      return(invisible(NULL))
+    }
+    pk <- self$peaks
+    cat(sprintf("Detected %d peak(s):\n", nrow(pk)))
+    for (i in seq_len(nrow(pk))) {
+      area_str <- if ("rel_area_pct" %in% names(pk) && is.finite(pk$rel_area_pct[i])) {
+        sprintf(", Area: %.1f%%", pk$rel_area_pct[i])
+      } else {
+        ""
+      }
+      cat(sprintf("  Peak %d: time = %.3f, height = %.1f%s\n", i, pk$time[i], pk$height[i], area_str))
+    }
+    invisible(pk)
   }
 
   )
