@@ -270,13 +270,34 @@ class BaseChromatogram(ABC):
         left_bases = properties["left_bases"]
         right_bases = properties["right_bases"]
 
+        # Sort peak indices by position so we can resolve overlapping bounds.
+        order = np.argsort(indices)
+        sorted_indices = indices[order]
+        sorted_left = left_bases[order]
+        sorted_right = right_bases[order]
+
+        # Resolve overlapping bounds between adjacent peaks by splitting
+        # at the valley minimum between their apexes.
+        starts = [int(max(0, min(sorted_left[k], n - 2))) for k in range(len(sorted_indices))]
+        ends = [int(max(starts[k] + 1, min(sorted_right[k], n - 1))) for k in range(len(sorted_indices))]
+
+        for k in range(len(sorted_indices) - 1):
+            if ends[k] >= starts[k + 1]:
+                # Find valley (minimum) between the two peak apexes
+                left_apex = int(sorted_indices[k])
+                right_apex = int(sorted_indices[k + 1])
+                valley_idx = left_apex + int(np.argmin(y[left_apex:right_apex + 1]))
+                ends[k] = valley_idx
+                starts[k + 1] = valley_idx
+
         peaks: list[Peak] = []
-        for k, idx in enumerate(indices):
-            start = int(max(0, min(left_bases[k], n - 2)))
-            end = int(max(start + 1, min(right_bases[k], n - 1)))
+        for k in range(len(sorted_indices)):
+            idx = int(sorted_indices[k])
+            start = starts[k]
+            end = max(start + 1, ends[k])
             peaks.append(
                 Peak(
-                    position=int(idx),
+                    position=idx,
                     time=float(x[idx]),
                     height=float(y[idx]),
                     start=start,
