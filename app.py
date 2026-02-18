@@ -77,6 +77,36 @@ def _hex_to_rgba(hex_color: str, alpha: float = 0.15) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
+def _label_yshifts(peaks: list, y_max: float) -> list[float]:
+    """Return per-peak y-shift values that avoid vertical label collisions.
+
+    Labels are placed above each peak's height.  When two neighbouring
+    labels would be too close together (within *threshold* of each other
+    on the y-axis), the lower one is nudged upward so they don't overlap.
+    """
+    if not peaks:
+        return []
+
+    # Base offset above each peak (in data units)
+    base_offset = 0.04 * y_max
+    min_gap = 0.06 * y_max  # minimum vertical gap between labels
+
+    # Work with (index, peak_height) pairs sorted by x position
+    items = sorted(enumerate(peaks), key=lambda t: t[1].time)
+    offsets = [base_offset] * len(peaks)
+
+    for i in range(1, len(items)):
+        cur_idx, cur_pk = items[i]
+        prev_idx, prev_pk = items[i - 1]
+        cur_y = cur_pk.height + offsets[cur_idx]
+        prev_y = prev_pk.height + offsets[prev_idx]
+        if abs(cur_y - prev_y) < min_gap:
+            # Nudge the current label upward
+            offsets[cur_idx] = (prev_y + min_gap) - cur_pk.height
+
+    return offsets
+
+
 def _demo_data(seed: int) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     n = 800
@@ -183,25 +213,27 @@ if display_mode == "Overlay all" or len(chromatograms) == 1:
         ))
         if show_peaks and ch.peaks:
             if show_bounds:
-                for pk in ch.peaks:
+                for pi, pk in enumerate(ch.peaks):
                     s = max(0, min(pk.start, len(ch.time) - 1))
                     e = max(0, min(pk.end, len(ch.time) - 1))
+                    alpha = 0.25 if pi % 2 == 0 else 0.12
                     fig.add_trace(go.Scatter(
                         x=ch.time[s : e + 1],
                         y=ch.intensity[s : e + 1],
                         fill="tozeroy",
-                        fillcolor=_hex_to_rgba(colors[idx]),
+                        fillcolor=_hex_to_rgba(colors[idx], alpha=alpha),
                         line=dict(width=0),
                         showlegend=False,
                         hoverinfo="skip",
                     ))
-            for pk in ch.peaks:
-                fig.add_vline(x=pk.time, line_dash="dot", line_color=colors[idx], opacity=0.6)
-                if label_peaks:
+            if label_peaks:
+                y_max = float(np.nanmax(ch.intensity))
+                yshifts = _label_yshifts(ch.peaks, y_max)
+                for pi, pk in enumerate(ch.peaks):
                     txt = f"t={pk.time:.2f}"
                     if show_area_pct and pk.rel_area_pct is not None:
                         txt += f", {pk.rel_area_pct:.1f}%"
-                    fig.add_annotation(x=pk.time, y=pk.height, text=txt, showarrow=False, yshift=15, font=dict(size=10))
+                    fig.add_annotation(x=pk.time, y=pk.height + yshifts[pi], text=txt, showarrow=False, font=dict(size=10))
 
     fig.update_layout(
         xaxis_title=x_label, yaxis_title=y_label,
@@ -222,25 +254,27 @@ else:
         ), row=r + 1, col=c + 1)
         if show_peaks and ch.peaks:
             if show_bounds:
-                for pk in ch.peaks:
+                for pi, pk in enumerate(ch.peaks):
                     s = max(0, min(pk.start, len(ch.time) - 1))
                     e = max(0, min(pk.end, len(ch.time) - 1))
+                    alpha = 0.25 if pi % 2 == 0 else 0.12
                     fig.add_trace(go.Scatter(
                         x=ch.time[s : e + 1],
                         y=ch.intensity[s : e + 1],
                         fill="tozeroy",
-                        fillcolor=_hex_to_rgba(colors[idx]),
+                        fillcolor=_hex_to_rgba(colors[idx], alpha=alpha),
                         line=dict(width=0),
                         showlegend=False,
                         hoverinfo="skip",
                     ), row=r + 1, col=c + 1)
-            for pk in ch.peaks:
-                fig.add_vline(x=pk.time, line_dash="dot", line_color="gray", opacity=0.6, row=r + 1, col=c + 1)
-                if label_peaks:
+            if label_peaks:
+                y_max = float(np.nanmax(ch.intensity))
+                yshifts = _label_yshifts(ch.peaks, y_max)
+                for pi, pk in enumerate(ch.peaks):
                     txt = f"t={pk.time:.2f}"
                     if show_area_pct and pk.rel_area_pct is not None:
                         txt += f", {pk.rel_area_pct:.1f}%"
-                    fig.add_annotation(x=pk.time, y=pk.height, text=txt, showarrow=False, yshift=15, font=dict(size=10), xref=f"x{idx + 1}" if idx else "x", yref=f"y{idx + 1}" if idx else "y")
+                    fig.add_annotation(x=pk.time, y=pk.height + yshifts[pi], text=txt, showarrow=False, font=dict(size=10), xref=f"x{idx + 1}" if idx else "x", yref=f"y{idx + 1}" if idx else "y")
 
     fig.update_layout(template="plotly_white", width=plot_w, height=plot_h)
 
