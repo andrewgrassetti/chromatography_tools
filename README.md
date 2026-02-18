@@ -33,82 +33,96 @@ Upload one or multiple CSV files containing `(time, intensity)` pairs and the ap
 ```bash
 git clone https://github.com/andrewvgrassetti/Chromatography.git
 cd Chromatography
+```
 
 ### Install Dependencies
 
-#Open R an run:
+Open R and run:
 
+```r
 install.packages(c(
   "shiny","bslib","readr","ggplot2","colourpicker","scales",
   "dplyr","purrr","tidyr","stringr","signal","minpack.lm","pracma","viridisLite"
 ))
 # Optional: high-quality graphics
 install.packages(c("ragg","Cairo"))
+```
 
-#Alternatively, if using renv:
+Alternatively, if using renv:
+
+```r
 install.packages("renv")
 renv::restore()
+```
 
 ### Running the App
+
+```r
 library(shiny)
 shiny::runApp(".")
+```
 
 A browser window will open automatically.
 If not, copy the printed URL (e.g., http://127.0.0.1:7428) into your browser.
 
-Input Format
+## Input Format
 
 Each chromatogram file must be a 2-column CSV:
 
-time	intensity
-0.00	12.3
-0.01	12.9
-...	...
+| time | intensity |
+|------|-----------|
+| 0.00 | 12.3     |
+| 0.01 | 12.9     |
+| ...  | ...      |
 
-Time in minutes (or any consistent unit)
+- Time in minutes (or any consistent unit)
+- Intensity in arbitrary units
+- Multiple files may be uploaded simultaneously.
 
-Intensity in arbitrary units
+## Output
 
-Multiple files may be uploaded simultaneously.
-
-Output
-Summary CSV
+### Summary CSV
 
 One row per file including:
 
-total number of peaks
+- total number of peaks
+- per-peak times
+- per-peak relative area (%)
 
-per-peak times
-
-per-peak relative area (%)
-
-Plot export
+### Plot export
 
 Available formats:
 
-###Testing
+- PNG
+- TIFF
+- EPS
 
-Run automated tests:
-Rscript scripts/test_chrom.R
-
-
-Expected output includes checks for:
-peak count accuracy
-integration correctness
-stability with noise
-
-
-PNG
-TIFF
-EPS
 with adjustable size and DPI.
 
+## Testing
+
+Run automated tests:
+
+```bash
+Rscript scripts/test_chrom.R
+```
+
+Expected output includes checks for:
+
+- peak count accuracy
+- integration correctness
+- stability with noise
+
+## Project Structure
+
+```
 Chromatography/
 ├── app.R                  # Main Shiny application
 ├── R/
 │   └── Chromatogram.R     # R6 class for smoothing, peak detection, integration
 ├── scripts/
 │   ├── test_chrom.R       # Automated testing for integration & detection
-│   └── make_5peak_test.R  # Synthetic chromatogram generator
+│   └── setup_environment.R # Environment setup script
 ├── renv.lock              # Package version snapshot (optional)
 └── README.md
+```

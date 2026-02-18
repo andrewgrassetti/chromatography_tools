@@ -23,8 +23,6 @@ chrom$auc(use = "smoothed")
 
 # Save plot as PNG
 chrom$plot(save_path = "outputs/figures/test_chrom.png")
-chrom$baseline(method = "min")
-chrom$auc(use = "smoothed")
 
 # New functionality
 chrom$find_peaks()
