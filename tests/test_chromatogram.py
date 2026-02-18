@@ -190,6 +190,13 @@ class TestAUC:
         auc_raw = ch.auc(use="raw")
         assert abs(auc_smooth - auc_raw) / auc_raw < 0.1
 
+    def test_trapezoid_compat(self):
+        """_trapezoid helper must resolve regardless of NumPy version."""
+        from chromatography.core import _trapezoid
+        assert callable(_trapezoid)
+        # Sanity check: area of a simple triangle (base=2, height=1) == 1.0
+        assert _trapezoid([0, 1, 0], [0, 1, 2]) == pytest.approx(1.0)
+
 
 # ---------------------------------------------------------------------------
 # Peak detection

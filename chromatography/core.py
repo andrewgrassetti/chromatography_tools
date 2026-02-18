@@ -22,6 +22,9 @@ import numpy as np
 from scipy.signal import savgol_filter
 from scipy.optimize import curve_fit
 
+# np.trapezoid was added in NumPy 2.0; fall back to the older np.trapz alias.
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz
+
 
 # ======================================================================
 # Data classes
@@ -203,7 +206,7 @@ class BaseChromatogram(ABC):
             if (use == "smoothed" and self.smoothed is not None)
             else self.intensity
         )
-        return float(np.trapezoid(y, self.time))
+        return float(_trapezoid(y, self.time))
 
     # ------------------------------------------------------------------
     # Peak detection
@@ -335,7 +338,7 @@ class BaseChromatogram(ABC):
             if len(xx) < 2 or np.any(np.isnan(xx)) or np.any(np.isnan(yy)):
                 pk.area = None
                 continue
-            pk.area = float(np.trapezoid(yy, xx))
+            pk.area = float(_trapezoid(yy, xx))
 
         self.peaks = [p for p in self.peaks if p.area is not None and p.area > 0]
 
