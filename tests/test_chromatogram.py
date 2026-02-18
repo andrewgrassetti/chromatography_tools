@@ -262,6 +262,36 @@ class TestPeakDetection:
             assert 0 <= pk.end < len(t)
             assert pk.start < pk.end
 
+    def test_overlapping_peaks_split_at_valley(self):
+        """Adjacent peaks without baseline separation should not overlap."""
+        t, i = _two_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        assert len(ch.peaks) >= 2
+        # Bounds of adjacent peaks should not overlap
+        sorted_peaks = sorted(ch.peaks, key=lambda p: p.time)
+        for k in range(len(sorted_peaks) - 1):
+            assert sorted_peaks[k].end <= sorted_peaks[k + 1].start
+
+    def test_overlapping_peaks_from_csv(self):
+        """Peaks from TestFile.CSV should be detected and split properly."""
+        import os
+        import pandas as pd
+        csv_path = os.path.join(os.path.dirname(__file__), "TestFile.CSV")
+        df = pd.read_csv(csv_path, header=None)
+        df.columns = ["time", "intensity"]
+        ch = HPLCChromatogram(
+            df["time"].values, df["intensity"].values,
+        ).smooth().find_peaks()
+        assert len(ch.peaks) >= 2
+        # Adjacent peak bounds should meet but not overlap
+        sorted_peaks = sorted(ch.peaks, key=lambda p: p.time)
+        for k in range(len(sorted_peaks) - 1):
+            assert sorted_peaks[k].end <= sorted_peaks[k + 1].start
+        # Integration should still sum to 100%
+        ch.integrate_peaks()
+        total_pct = sum(p.rel_area_pct for p in ch.peaks if p.rel_area_pct is not None)
+        assert abs(total_pct - 100) < 0.01
+
 
 # ---------------------------------------------------------------------------
 # Integration
