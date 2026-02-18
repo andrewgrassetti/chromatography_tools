@@ -1,27 +1,34 @@
 # Chromatography Peak Analysis App
 
-An interactive **R Shiny application** for visualizing, detecting, and integrating peaks in chromatographic data.  
+An interactive **Python / Streamlit** application for visualizing, detecting, and integrating peaks in chromatographic data.
 Upload one or multiple CSV files containing `(time, intensity)` pairs and the app performs smoothing, peak detection, trapezoidal integration, and percentage area calculation.
+
+The core library uses an **object-oriented class hierarchy** so that technique-specific defaults (axis labels, smoothing parameters, detection thresholds) are built-in for HPLC, GC, SEC/GPC, and Ion Chromatography — while all shared signal-processing logic lives in a single abstract base class.
 
 ---
 
 ## Features
 
-- **Peak detection**
+- **Multiple chromatography types** via OOP hierarchy
+  - `HPLCChromatogram` — UV/Vis absorbance detection
+  - `GCChromatogram` — FID / TCD detection (sharper peaks)
+  - `SECChromatogram` — Size-exclusion / GPC with optional MW calibration
+  - `IonChromatogram` — Conductivity detection (broader peaks)
+
+- **Peak detection & integration**
   - Height-only threshold (% of max signal)
   - Savitzky–Golay smoothing for noise reduction
-  - Robust trapezoidal peak integration (pracma::trapz)
+  - Trapezoidal peak integration (`numpy.trapz`)
   - Automated relative area (%) calculation
 
-- **Visualization**
+- **Visualization** (Plotly)
   - Overlay or separate-panel modes
-  - Automatic, balanced viridis color palette
-  - Optional base color override
+  - Automatic viridis-derived color palette
   - Peak labels with optional % areas
 
 - **Export**
   - Summary CSV with peak times and relative areas
-  - Plot export as **PNG**, **TIFF**, or **EPS**
+  - Plot export as **PNG**, **SVG**, or **PDF**
 
 - **Demo data** included for quick testing
 
@@ -31,39 +38,30 @@ Upload one or multiple CSV files containing `(time, intensity)` pairs and the ap
 
 ### Clone the repository
 ```bash
-git clone https://github.com/andrewvgrassetti/Chromatography.git
-cd Chromatography
+git clone https://github.com/andrewgrassetti/chromatography_tools.git
+cd chromatography_tools
 ```
 
-### Install Dependencies
+### Install dependencies
 
-Open R and run:
-
-```r
-install.packages(c(
-  "shiny","bslib","readr","ggplot2","colourpicker","scales",
-  "dplyr","purrr","tidyr","stringr","signal","minpack.lm","pracma","viridisLite"
-))
-# Optional: high-quality graphics
-install.packages(c("ragg","Cairo"))
+```bash
+pip install -r requirements.txt
 ```
 
-Alternatively, if using renv:
+Or install as a package (editable):
 
-```r
-install.packages("renv")
-renv::restore()
+```bash
+pip install -e ".[dev]"
 ```
 
 ### Running the App
 
-```r
-library(shiny)
-shiny::runApp(".")
+```bash
+streamlit run app.py
 ```
 
 A browser window will open automatically.
-If not, copy the printed URL (e.g., http://127.0.0.1:7428) into your browser.
+If not, copy the printed URL (e.g., http://localhost:8501) into your browser.
 
 ## Input Format
 
@@ -85,6 +83,7 @@ Each chromatogram file must be a 2-column CSV:
 
 One row per file including:
 
+- technique type
 - total number of peaks
 - per-peak times
 - per-peak relative area (%)
@@ -94,35 +93,62 @@ One row per file including:
 Available formats:
 
 - PNG
-- TIFF
-- EPS
+- SVG
+- PDF
 
-with adjustable size and DPI.
+with adjustable size.
 
 ## Testing
 
 Run automated tests:
 
 ```bash
-Rscript scripts/test_chrom.R
+pytest
 ```
 
 Expected output includes checks for:
 
+- OOP hierarchy and technique-specific defaults
 - peak count accuracy
 - integration correctness
 - stability with noise
+- SEC molecular-weight calibration
+- method chaining
 
 ## Project Structure
 
 ```
-Chromatography/
-├── app.R                  # Main Shiny application
-├── R/
-│   └── Chromatogram.R     # R6 class for smoothing, peak detection, integration
-├── scripts/
-│   ├── test_chrom.R       # Automated testing for integration & detection
-│   └── setup_environment.R # Environment setup script
-├── renv.lock              # Package version snapshot (optional)
+chromatography_tools/
+├── app.py                        # Streamlit web application
+├── chromatography/
+│   ├── __init__.py               # Package exports
+│   └── core.py                   # OOP class hierarchy
+│       ├── BaseChromatogram      #   Abstract base (smoothing, peaks, integration)
+│       ├── HPLCChromatogram      #   HPLC / UV-Vis
+│       ├── GCChromatogram        #   Gas chromatography
+│       ├── SECChromatogram       #   Size-exclusion / GPC (+ MW calibration)
+│       └── IonChromatogram       #   Ion chromatography
+├── tests/
+│   └── test_chromatogram.py      # Comprehensive pytest suite
+├── pyproject.toml                # Python project metadata
+├── requirements.txt              # Pinned dependencies
+├── R/                            # Original R implementation (preserved)
+│   └── Chromatogram.R
+├── app.R                         # Original R Shiny app (preserved)
+├── scripts/                      # Original R scripts (preserved)
+│   ├── test_chrom.R
+│   └── setup_environment.R
 └── README.md
 ```
+
+## Class Hierarchy
+
+```
+BaseChromatogram (ABC)
+├── HPLCChromatogram    — Chromatogram alias
+├── GCChromatogram      — narrower smoothing window, lower height threshold
+├── SECChromatogram     — elution-volume axis, MW calibration support
+└── IonChromatogram     — wider smoothing window, conductivity axis
+```
+
+All subclasses inherit the full signal-processing pipeline (smooth → find_peaks → integrate_peaks → summarize_peaks) and only override technique-specific metadata and defaults.

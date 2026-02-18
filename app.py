@@ -2,7 +2,8 @@
 
 Upload one or more CSV files containing ``(time, intensity)`` columns and the
 app performs smoothing, peak detection, trapezoidal integration, and
-relative-area calculation.
+relative-area calculation.  Supports multiple chromatography techniques
+(HPLC, GC, SEC/GPC, Ion Chromatography) through a proper OOP class hierarchy.
 """
 
 from __future__ import annotations
@@ -16,7 +17,24 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from chromatography.core import Chromatogram
+from chromatography.core import (
+    BaseChromatogram,
+    GCChromatogram,
+    HPLCChromatogram,
+    IonChromatogram,
+    SECChromatogram,
+)
+
+# ------------------------------------------------------------------
+# Technique → class mapping
+# ------------------------------------------------------------------
+
+TECHNIQUE_MAP: dict[str, type[BaseChromatogram]] = {
+    "HPLC": HPLCChromatogram,
+    "GC": GCChromatogram,
+    "SEC/GPC": SECChromatogram,
+    "Ion Chromatography": IonChromatogram,
+}
 
 
 # ------------------------------------------------------------------
@@ -79,6 +97,13 @@ with st.sidebar:
     )
     use_demo = st.checkbox("Use demo data if no files uploaded", value=True)
 
+    st.header("Technique")
+    technique = st.selectbox(
+        "Chromatography type",
+        list(TECHNIQUE_MAP.keys()),
+        help="Selects technique-specific defaults (axis labels, smoothing window, etc.)",
+    )
+
     st.header("Display")
     display_mode = st.radio("Mode", ["Overlay all", "Separate panels"], horizontal=True)
     show_peaks = st.checkbox("Show peaks", value=True)
@@ -117,11 +142,12 @@ with st.sidebar:
         ds["label"] = st.text_input(f"Nickname for {ds['filename']}", value=ds["label"], key=f"nick_{ds['filename']}")
 
 
-# ---- Build Chromatogram objects ----
+# ---- Build Chromatogram objects (using the selected technique class) ----
+ChromClass = TECHNIQUE_MAP[technique]
 chromatograms: list[dict[str, Any]] = []
 for ds in datasets:
-    ch = Chromatogram(ds["df"]["time"].values, ds["df"]["intensity"].values)
-    ch.smooth(window=11, poly=3)
+    ch = ChromClass(ds["df"]["time"].values, ds["df"]["intensity"].values)
+    ch.smooth()  # uses technique-specific defaults
 
     ref_signal = ch.smoothed if ch.smoothed is not None else ch.intensity
     min_h_abs = (min_height_pct / 100) * float(np.nanmax(ref_signal))
@@ -132,6 +158,9 @@ for ds in datasets:
 
     chromatograms.append({"label": ds["label"], "filename": ds["filename"], "chrom": ch})
 
+# Axis labels from the first chromatogram instance
+x_label = chromatograms[0]["chrom"].x_axis_label
+y_label = chromatograms[0]["chrom"].y_axis_label
 
 # ---- Plotting ----
 colors = _color_palette(len(chromatograms))
@@ -154,7 +183,7 @@ if display_mode == "Overlay all" or len(chromatograms) == 1:
                     fig.add_annotation(x=pk.time, y=pk.height, text=txt, showarrow=False, yshift=15, font=dict(size=10))
 
     fig.update_layout(
-        xaxis_title="Time (min)", yaxis_title="Intensity",
+        xaxis_title=x_label, yaxis_title=y_label,
         template="plotly_white", width=plot_w, height=plot_h,
         legend_title="Sample",
     )
@@ -201,7 +230,12 @@ st.download_button(
 rows: list[dict[str, Any]] = []
 for entry in chromatograms:
     ch = entry["chrom"]
-    base = {"filename": entry["filename"], "nickname": entry["label"], "total_peaks": len(ch.peaks)}
+    base: dict[str, Any] = {
+        "filename": entry["filename"],
+        "nickname": entry["label"],
+        "technique": ch.technique_name,
+        "total_peaks": len(ch.peaks),
+    }
     if ch.peaks:
         for i, pk in enumerate(ch.peaks, 1):
             base[f"peak_{i}_time"] = pk.time
