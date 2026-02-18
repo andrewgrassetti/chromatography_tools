@@ -480,3 +480,32 @@ class TestManualBounds:
         ch.set_manual_bounds(first_pk.time + 0.01, left_time=first_pk.time - 0.2)
         matching = [p for p in ch.peaks if abs(p.time - first_pk.time) < 0.5]
         assert len(matching) == 1
+
+    def test_auto_detect_left_bound(self):
+        """Passing a time left of the apex as left_time narrows the left side."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        pk = max(ch.peaks, key=lambda p: p.height)
+        original_start = pk.start
+        original_end = pk.end
+        # Click halfway between the current left bound and the apex
+        clicked_time = (t[original_start] + pk.time) / 2
+        ch.set_manual_bounds(pk.time, left_time=clicked_time)
+        matching = [p for p in ch.peaks if abs(p.time - pk.time) < 0.5]
+        assert len(matching) == 1
+        assert matching[0].start > original_start
+        assert matching[0].end == original_end
+
+    def test_auto_detect_right_bound(self):
+        """Passing a time right of the apex as right_time narrows the right side."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        pk = max(ch.peaks, key=lambda p: p.height)
+        original_start = pk.start
+        original_end = pk.end
+        clicked_time = pk.time + 1.5
+        ch.set_manual_bounds(pk.time, right_time=clicked_time)
+        matching = [p for p in ch.peaks if abs(p.time - pk.time) < 0.5]
+        assert len(matching) == 1
+        assert matching[0].start == original_start
+        assert matching[0].end < original_end
