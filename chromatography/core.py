@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
-from scipy.signal import savgol_filter
+from scipy.signal import find_peaks as _scipy_find_peaks, savgol_filter
 from scipy.optimize import curve_fit
 
 # np.trapezoid was added in NumPy 2.0; fall back to the older np.trapz alias.
@@ -212,18 +212,31 @@ class BaseChromatogram(ABC):
     # Peak detection
     # ------------------------------------------------------------------
 
-    def find_peaks(self, min_height: float | None = None) -> "BaseChromatogram":
-        """Detect peaks above *min_height* (absolute intensity).
+    def find_peaks(
+        self,
+        min_height: float | None = None,
+        prominence: float | None = None,
+        distance: int | None = None,
+    ) -> "BaseChromatogram":
+        """Detect peaks using scipy's prominence-based algorithm.
 
-        The algorithm locates rising→falling transitions on the smoothed
-        signal, resolves plateau tops, and determines integration bounds
-        from surrounding local minima.
+        Uses :func:`scipy.signal.find_peaks` with prominence filtering
+        for robust chromatographic peak identification.  Integration
+        bounds for each peak are derived from the prominence base
+        positions (left and right bases).
 
         Parameters
         ----------
         min_height : float, optional
             Minimum absolute height.  Defaults to
             ``default_min_height_frac * max(signal)``.
+        prominence : float, optional
+            Minimum peak prominence (vertical distance from the peak to
+            the higher of its two neighbouring bases).  Defaults to
+            ``0.02 * max(signal)``.
+        distance : int, optional
+            Minimum number of samples between neighbouring peaks.
+            Defaults to ``max(3, len(signal) // 100)``.
         """
         y = self.smoothed if self.smoothed is not None else self.intensity
         y = np.asarray(y, dtype=float)
@@ -234,7 +247,7 @@ class BaseChromatogram(ABC):
             self.peaks = []
             return self
 
-        y_max = np.nanmax(y)
+        y_max = float(np.nanmax(y))
         if not np.isfinite(y_max):
             self.peaks = []
             return self
@@ -243,66 +256,29 @@ class BaseChromatogram(ABC):
             min_height if min_height is not None
             else self.default_min_height_frac * y_max
         )
+        prom = prominence if prominence is not None else 0.02 * y_max
+        dist = distance if distance is not None else max(3, n // 100)
 
-        dy = np.diff(y)
-        sdy = np.sign(dy)
+        indices, properties = _scipy_find_peaks(
+            y, height=min_height_abs, prominence=prom, distance=dist,
+        )
 
-        padded_after = np.append(sdy, np.nan)
-        padded_before = np.insert(sdy, 0, np.nan)
-        r2f = np.where((padded_after <= 0) & (padded_before > 0))[0]
-
-        def _pick_plateau_mid(idx: int) -> int:
-            left = right = idx
-            while left > 0 and y[left - 1] == y[idx]:
-                left -= 1
-            while right < n - 1 and y[right + 1] == y[idx]:
-                right += 1
-            return int(round((left + right) / 2))
-
-        candidates: list[int] = []
-        for i in r2f:
-            if i < 1 or i >= n - 1:
-                continue
-            ii = (
-                _pick_plateau_mid(i)
-                if (y[i] == y[i - 1] or y[i] == y[i + 1])
-                else int(i)
-            )
-            if ii < 1 or ii >= n - 1:
-                continue
-            if (
-                np.isfinite(y[ii])
-                and y[ii] >= y[ii - 1]
-                and y[ii] > y[ii + 1]
-                and y[ii] >= min_height_abs
-            ):
-                candidates.append(ii)
-
-        candidates = sorted(set(candidates))
-        if not candidates:
+        if len(indices) == 0:
             self.peaks = []
             return self
 
-        f2r = np.where((padded_after >= 0) & (padded_before < 0))[0]
-        mins = sorted(set([0] + list(f2r) + [n - 1]))
-
-        def _left_min(idx: int) -> int:
-            pos = np.searchsorted(mins, idx, side="right") - 1
-            return mins[max(0, pos)]
-
-        def _right_min(idx: int) -> int:
-            pos = np.searchsorted(mins, idx, side="right")
-            return mins[pos] if pos < len(mins) else n - 1
+        left_bases = properties["left_bases"]
+        right_bases = properties["right_bases"]
 
         peaks: list[Peak] = []
-        for c in candidates:
-            start = max(0, min(_left_min(c), n - 2))
-            end = max(start + 1, min(_right_min(c), n - 1))
+        for k, idx in enumerate(indices):
+            start = int(max(0, min(left_bases[k], n - 2)))
+            end = int(max(start + 1, min(right_bases[k], n - 1)))
             peaks.append(
                 Peak(
-                    position=c,
-                    time=float(x[c]),
-                    height=float(y[c]),
+                    position=int(idx),
+                    time=float(x[idx]),
+                    height=float(y[idx]),
                     start=start,
                     end=end,
                 ),

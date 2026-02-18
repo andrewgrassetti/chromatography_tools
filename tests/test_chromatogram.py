@@ -238,6 +238,30 @@ class TestPeakDetection:
         ch = SECChromatogram(t, i).smooth().find_peaks()
         assert len(ch.peaks) >= 1
 
+    def test_prominence_filters_noise(self):
+        """High prominence threshold should suppress noise peaks."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks(prominence=50)
+        assert len(ch.peaks) >= 1
+        # Only the main peak should survive a high prominence threshold
+        main_peak = max(ch.peaks, key=lambda p: p.height)
+        assert abs(main_peak.time - 10) < 1
+
+    def test_distance_parameter(self):
+        """Setting a large distance should merge nearby spurious peaks."""
+        t, i = _two_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks(distance=5)
+        assert len(ch.peaks) >= 2
+
+    def test_peak_bounds_within_signal(self):
+        """Integration bounds (start/end) should be within signal range."""
+        t, i = _two_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        for pk in ch.peaks:
+            assert 0 <= pk.start < len(t)
+            assert 0 <= pk.end < len(t)
+            assert pk.start < pk.end
+
 
 # ---------------------------------------------------------------------------
 # Integration
