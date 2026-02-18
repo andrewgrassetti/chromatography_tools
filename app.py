@@ -146,14 +146,10 @@ with st.sidebar:
         value=False,
         help=(
             "Enable to manually adjust integration bounds. "
-            "Select a peak and bound side, then click on the plot."
+            "Click on the plot to set a bound for the nearest peak. "
+            "Clicks left of a peak's apex set the left bound; "
+            "clicks to the right set the right bound."
         ),
-    )
-    bound_side = st.radio(
-        "Bound to set on click",
-        ["Left bound", "Right bound"],
-        horizontal=True,
-        disabled=not edit_bounds,
     )
 
     st.header("Export")
@@ -303,42 +299,60 @@ if edit_bounds:
         fig,
         use_container_width=True,
         on_select="rerun",
-        selection_mode="points",
+        selection_mode=("points", "box", "lasso"),
         key="peak_bound_chart",
     )
-    # Process clicked point
+    # Extract the clicked x-coordinate from any selection mode.
+    clicked_time: float | None = None
     if event and hasattr(event, "selection") and event.selection:
-        sel_points = event.selection.get("points", [])
+        sel = event.selection
+        # 1) Point selection — use the first selected point's x.
+        sel_points = sel.get("points", [])
         if sel_points:
-            clicked_x = sel_points[0].get("x")
-            if clicked_x is not None:
-                clicked_time = float(clicked_x)
-                # Find the chromatogram and peak nearest to the click
-                best_entry = None
-                best_peak = None
-                best_dist = float("inf")
-                for entry in chromatograms:
-                    ch = entry["chrom"]
-                    for pk in ch.peaks:
-                        d = abs(pk.time - clicked_time)
-                        if d < best_dist:
-                            best_dist = d
-                            best_peak = pk
-                            best_entry = entry
-                # If no peaks exist, try to find the closest chromatogram
-                # trace by filename (use the first one)
-                if best_peak is None and chromatograms:
-                    best_entry = chromatograms[0]
+            cx = sel_points[0].get("x")
+            if cx is not None:
+                clicked_time = float(cx)
+        # 2) Box selection — use the midpoint of the x range.
+        if clicked_time is None:
+            for box in sel.get("box", []):
+                xs = box.get("x")
+                if xs and len(xs) >= 2:
+                    clicked_time = float((xs[0] + xs[-1]) / 2)
+                    break
+        # 3) Lasso selection — use the mean of the x coordinates.
+        if clicked_time is None:
+            for lasso in sel.get("lasso", []):
+                xs = lasso.get("x")
+                if xs:
+                    clicked_time = float(np.mean(xs))
+                    break
 
-                if best_peak is not None and best_entry is not None:
-                    key = (best_entry["filename"], best_peak.time)
-                    existing = st.session_state.manual_bounds.get(key, {})
-                    if bound_side == "Left bound":
-                        existing["left_time"] = clicked_time
-                    else:
-                        existing["right_time"] = clicked_time
-                    st.session_state.manual_bounds[key] = existing
-                    st.rerun()
+    if clicked_time is not None:
+        # Find the chromatogram and peak nearest to the click.
+        best_entry = None
+        best_peak = None
+        best_dist = float("inf")
+        for entry in chromatograms:
+            ch = entry["chrom"]
+            for pk in ch.peaks:
+                d = abs(pk.time - clicked_time)
+                if d < best_dist:
+                    best_dist = d
+                    best_peak = pk
+                    best_entry = entry
+
+        if best_peak is not None and best_entry is not None:
+            key = (best_entry["filename"], best_peak.time)
+            existing = st.session_state.manual_bounds.get(key, {})
+            # Auto-detect which bound to set: clicks left of the
+            # peak apex adjust the left bound, clicks to the right
+            # adjust the right bound.
+            if clicked_time < best_peak.time:
+                existing["left_time"] = clicked_time
+            else:
+                existing["right_time"] = clicked_time
+            st.session_state.manual_bounds[key] = existing
+            st.rerun()
 else:
     st.plotly_chart(fig, use_container_width=True)
 
