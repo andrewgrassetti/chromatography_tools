@@ -70,4 +70,5 @@ class TestEditBoundsChartConfig:
         fill_trace = fig.data[1]
         # The fill trace has line.width=0, not mode="lines", so it should be untouched.
         assert fill_trace.fill == "tozeroy"
-        assert fill_trace.marker.size is None or fill_trace.marker.size != 8
+        assert fill_trace.mode is None  # mode was never set to "lines"
+        assert fill_trace.marker.size is None  # no marker added
