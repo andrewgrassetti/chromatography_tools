@@ -107,16 +107,6 @@ def _label_yshifts(peaks: list, y_max: float) -> list[float]:
     return offsets
 
 
-def _demo_data(seed: int) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    n = 800
-    time = np.linspace(0, 20, n)
-    peak1 = (80 + 10 * seed) * np.exp(-((time - (9.5 + 0.2 * seed)) ** 2) / (2 * 0.25 ** 2))
-    peak2 = (60 + 10 * seed) * np.exp(-((time - (10.6 + 0.2 * seed)) ** 2) / (2 * 0.22 ** 2))
-    intensity = peak1 + peak2 + rng.normal(scale=4, size=n)
-    return pd.DataFrame({"time": time, "intensity": intensity})
-
-
 # ------------------------------------------------------------------
 # Streamlit UI
 # ------------------------------------------------------------------
@@ -132,7 +122,6 @@ with st.sidebar:
         type=["csv"],
         accept_multiple_files=True,
     )
-    use_demo = st.checkbox("Use demo data if no files uploaded", value=True)
 
     st.header("Technique")
     technique = st.selectbox(
@@ -165,12 +154,9 @@ if uploaded_files:
         df = read_two_col_csv(uf)
         if df is not None:
             datasets.append({"filename": uf.name, "label": uf.name.rsplit(".", 1)[0], "df": df})
-elif use_demo:
-    for idx in (1, 2):
-        datasets.append({"filename": f"demo_{chr(64 + idx)}.csv", "label": f"demo_{chr(64 + idx)}", "df": _demo_data(idx)})
 
 if not datasets:
-    st.info("Upload at least one CSV file or enable the demo data option.")
+    st.info("Upload at least one CSV file to begin analysis.")
     st.stop()
 
 # ---- Nicknames ----
@@ -283,15 +269,24 @@ st.plotly_chart(fig, use_container_width=True)
 
 # ---- Plot export ----
 fmt_map = {"PNG": "png", "SVG": "svg", "PDF": "pdf"}
-buf = io.BytesIO()
-fig.write_image(buf, format=fmt_map[plot_fmt], width=plot_w, height=plot_h)
-buf.seek(0)
-st.download_button(
-    label=f"Download plot ({plot_fmt})",
-    data=buf,
-    file_name=f"chromatograms.{fmt_map[plot_fmt]}",
-    mime=f"image/{fmt_map[plot_fmt]}",
-)
+
+
+@st.fragment
+def _plot_download_button() -> None:
+    """Render the download button and only generate the image on click."""
+    if st.button(f"Download plot ({plot_fmt})"):
+        buf = io.BytesIO()
+        fig.write_image(buf, format=fmt_map[plot_fmt], width=plot_w, height=plot_h)
+        buf.seek(0)
+        st.download_button(
+            label=f"Save {plot_fmt}",
+            data=buf,
+            file_name=f"chromatograms.{fmt_map[plot_fmt]}",
+            mime=f"image/{fmt_map[plot_fmt]}",
+        )
+
+
+_plot_download_button()
 
 
 # ---- Summary CSV ----
