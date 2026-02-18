@@ -203,11 +203,12 @@ for ds in datasets:
     # Apply any saved manual bounds before integration
     for (fname, peak_t), bounds in st.session_state.manual_bounds.items():
         if fname == ds["filename"] and ch.peaks:
-            ch.set_manual_bounds(
-                peak_t,
-                left_time=bounds.get("left_time"),
-                right_time=bounds.get("right_time"),
-            )
+            left = bounds.get("left_time")
+            right = bounds.get("right_time")
+            if left is not None or right is not None:
+                ch.set_manual_bounds(
+                    peak_t, left_time=left, right_time=right,
+                )
 
     if ch.peaks:
         ch.integrate_peaks()
@@ -347,8 +348,10 @@ if st.session_state.manual_bounds:
         st.subheader("Active Bound Overrides")
         keys_to_remove: list[tuple[str, float]] = []
         for (fname, peak_t), bounds in st.session_state.manual_bounds.items():
-            left_str = f"{bounds['left_time']:.2f}" if bounds.get("left_time") is not None else "auto"
-            right_str = f"{bounds['right_time']:.2f}" if bounds.get("right_time") is not None else "auto"
+            left_val = bounds.get("left_time")
+            right_val = bounds.get("right_time")
+            left_str = f"{left_val:.2f}" if left_val is not None else "auto"
+            right_str = f"{right_val:.2f}" if right_val is not None else "auto"
             col1, col2 = st.columns([3, 1])
             col1.write(f"**{fname}** peak @ {peak_t:.2f}  \nL: {left_str} | R: {right_str}")
             if col2.button("✕", key=f"rm_{fname}_{peak_t}"):

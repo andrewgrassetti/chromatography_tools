@@ -451,7 +451,11 @@ class TestManualBounds:
         # Re-detect and narrow the first peak
         ch2 = HPLCChromatogram(t, i).smooth().find_peaks()
         pk = min(ch2.peaks, key=lambda p: p.time)
-        ch2.set_manual_bounds(pk.time, right_time=pk.time + 0.15)
+        target_right = pk.time + 0.15
+        ch2.set_manual_bounds(pk.time, right_time=target_right)
+        # Verify the bound was actually set near the requested time
+        updated_pk = min(ch2.peaks, key=lambda p: p.time)
+        assert t[updated_pk.end] <= target_right + (t[1] - t[0])
         ch2.integrate_peaks()
 
         # Areas should have changed
