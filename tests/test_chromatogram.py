@@ -259,7 +259,7 @@ class TestPeakDetection:
         ch = HPLCChromatogram(t, i).smooth().find_peaks()
         for pk in ch.peaks:
             assert 0 <= pk.start < len(t)
-            assert 0 < pk.end < len(t)
+            assert 0 <= pk.end < len(t)
             assert pk.start < pk.end
 
 
