@@ -140,6 +140,22 @@ with st.sidebar:
     st.header("Peak Picking")
     min_height_pct = st.slider("Min height (% of max)", 0, 100, 10, step=1)
 
+    st.header("Manual Peak Bounds")
+    edit_bounds = st.checkbox(
+        "Edit peak bounds",
+        value=False,
+        help=(
+            "Enable to manually adjust integration bounds. "
+            "Select a peak and bound side, then click on the plot."
+        ),
+    )
+    bound_side = st.radio(
+        "Bound to set on click",
+        ["Left bound", "Right bound"],
+        horizontal=True,
+        disabled=not edit_bounds,
+    )
+
     st.header("Export")
     plot_fmt = st.selectbox("Save plot as", ["PNG", "SVG", "PDF"])
     plot_w = st.number_input("Width (px)", value=1000, min_value=200, step=50)
@@ -166,6 +182,12 @@ with st.sidebar:
         ds["label"] = st.text_input(f"Nickname for {ds['filename']}", value=ds["label"], key=f"nick_{ds['filename']}")
 
 
+# ---- Session state for manual peak-bound overrides ----
+# Key: (filename, peak_time) → {"left_time": float | None, "right_time": float | None}
+if "manual_bounds" not in st.session_state:
+    st.session_state.manual_bounds: dict[tuple[str, float], dict[str, float | None]] = {}
+
+
 # ---- Build Chromatogram objects (using the selected technique class) ----
 ChromClass = TECHNIQUE_MAP[technique]
 chromatograms: list[dict[str, Any]] = []
@@ -177,6 +199,16 @@ for ds in datasets:
     min_h_abs = (min_height_pct / 100) * float(np.nanmax(ref_signal))
 
     ch.find_peaks(min_height=min_h_abs)
+
+    # Apply any saved manual bounds before integration
+    for (fname, peak_t), bounds in st.session_state.manual_bounds.items():
+        if fname == ds["filename"] and ch.peaks:
+            ch.set_manual_bounds(
+                peak_t,
+                left_time=bounds.get("left_time"),
+                right_time=bounds.get("right_time"),
+            )
+
     if ch.peaks:
         ch.integrate_peaks()
 
@@ -264,7 +296,70 @@ else:
 
     fig.update_layout(template="plotly_white", width=plot_w, height=plot_h)
 
-st.plotly_chart(fig, use_container_width=True)
+# ---- Render chart (with click handling when editing bounds) ----
+if edit_bounds:
+    event = st.plotly_chart(
+        fig,
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="points",
+        key="peak_bound_chart",
+    )
+    # Process clicked point
+    if event and hasattr(event, "selection") and event.selection:
+        sel_points = event.selection.get("points", [])
+        if sel_points:
+            clicked_x = sel_points[0].get("x")
+            if clicked_x is not None:
+                clicked_time = float(clicked_x)
+                # Find the chromatogram and peak nearest to the click
+                best_entry = None
+                best_peak = None
+                best_dist = float("inf")
+                for entry in chromatograms:
+                    ch = entry["chrom"]
+                    for pk in ch.peaks:
+                        d = abs(pk.time - clicked_time)
+                        if d < best_dist:
+                            best_dist = d
+                            best_peak = pk
+                            best_entry = entry
+                # If no peaks exist, try to find the closest chromatogram
+                # trace by filename (use the first one)
+                if best_peak is None and chromatograms:
+                    best_entry = chromatograms[0]
+
+                if best_peak is not None and best_entry is not None:
+                    key = (best_entry["filename"], best_peak.time)
+                    existing = st.session_state.manual_bounds.get(key, {})
+                    if bound_side == "Left bound":
+                        existing["left_time"] = clicked_time
+                    else:
+                        existing["right_time"] = clicked_time
+                    st.session_state.manual_bounds[key] = existing
+                    st.rerun()
+else:
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---- Show active manual overrides and allow clearing ----
+if st.session_state.manual_bounds:
+    with st.sidebar:
+        st.subheader("Active Bound Overrides")
+        keys_to_remove: list[tuple[str, float]] = []
+        for (fname, peak_t), bounds in st.session_state.manual_bounds.items():
+            left_str = f"{bounds['left_time']:.2f}" if bounds.get("left_time") is not None else "auto"
+            right_str = f"{bounds['right_time']:.2f}" if bounds.get("right_time") is not None else "auto"
+            col1, col2 = st.columns([3, 1])
+            col1.write(f"**{fname}** peak @ {peak_t:.2f}  \nL: {left_str} | R: {right_str}")
+            if col2.button("✕", key=f"rm_{fname}_{peak_t}"):
+                keys_to_remove.append((fname, peak_t))
+        for k in keys_to_remove:
+            del st.session_state.manual_bounds[k]
+        if keys_to_remove:
+            st.rerun()
+        if st.button("Clear all overrides"):
+            st.session_state.manual_bounds.clear()
+            st.rerun()
 
 
 # ---- Plot export ----

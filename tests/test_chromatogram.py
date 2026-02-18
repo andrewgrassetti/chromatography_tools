@@ -366,3 +366,113 @@ class TestChaining:
         )
         assert len(ch.peaks) >= 2
         assert all(p.rel_area_pct is not None for p in ch.peaks)
+
+
+# ---------------------------------------------------------------------------
+# Manual peak-bound override
+# ---------------------------------------------------------------------------
+
+class TestManualBounds:
+    def test_set_left_bound_narrows_peak(self):
+        """Setting a left bound closer to the apex narrows the integration window."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        assert len(ch.peaks) >= 1
+        pk = max(ch.peaks, key=lambda p: p.height)
+        original_start = pk.start
+        # Set left bound to be halfway between original start and apex
+        new_left = (t[original_start] + pk.time) / 2
+        ch.set_manual_bounds(pk.time, left_time=new_left)
+        # Peak should still exist (bound is left of apex)
+        matching = [p for p in ch.peaks if abs(p.time - pk.time) < 0.5]
+        assert len(matching) == 1
+        assert matching[0].start > original_start
+
+    def test_set_right_bound_narrows_peak(self):
+        """Setting a right bound closer to the apex narrows the integration window."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        pk = max(ch.peaks, key=lambda p: p.height)
+        original_end = pk.end
+        ch.set_manual_bounds(pk.time, right_time=pk.time + 1.0)
+        matching = [p for p in ch.peaks if abs(p.time - pk.time) < 0.5]
+        assert len(matching) == 1
+        assert matching[0].end <= original_end
+
+    def test_set_both_bounds(self):
+        """Both bounds can be set simultaneously."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        pk = max(ch.peaks, key=lambda p: p.height)
+        ch.set_manual_bounds(
+            pk.time, left_time=pk.time - 0.5, right_time=pk.time + 0.5,
+        )
+        matching = [p for p in ch.peaks if abs(p.time - pk.time) < 0.5]
+        assert len(matching) == 1
+
+    def test_invalid_left_bound_removes_peak(self):
+        """A left bound beyond the apex should remove the peak."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        pk = max(ch.peaks, key=lambda p: p.height)
+        original_count = len(ch.peaks)
+        # Set left bound *past* the apex
+        ch.set_manual_bounds(pk.time, left_time=pk.time + 2.0)
+        assert len(ch.peaks) == original_count - 1
+
+    def test_invalid_right_bound_removes_peak(self):
+        """A right bound before the apex should remove the peak."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        pk = max(ch.peaks, key=lambda p: p.height)
+        original_count = len(ch.peaks)
+        ch.set_manual_bounds(pk.time, right_time=pk.time - 2.0)
+        assert len(ch.peaks) == original_count - 1
+
+    def test_no_peaks_raises(self):
+        """Calling without detected peaks should raise RuntimeError."""
+        ch = HPLCChromatogram([0, 1, 2], [1, 2, 1])
+        with pytest.raises(RuntimeError, match="No peaks"):
+            ch.set_manual_bounds(1.0, left_time=0.5)
+
+    def test_no_bounds_raises(self):
+        """Calling without any bound should raise ValueError."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        with pytest.raises(ValueError, match="left_time or right_time"):
+            ch.set_manual_bounds(10.0)
+
+    def test_reintegration_after_manual_bounds(self):
+        """Integration should reflect the manually adjusted bounds."""
+        t, i = _two_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks().integrate_peaks()
+        original_areas = {p.time: p.rel_area_pct for p in ch.peaks}
+
+        # Re-detect and narrow the first peak
+        ch2 = HPLCChromatogram(t, i).smooth().find_peaks()
+        pk = min(ch2.peaks, key=lambda p: p.time)
+        ch2.set_manual_bounds(pk.time, right_time=pk.time + 0.15)
+        ch2.integrate_peaks()
+
+        # Areas should have changed
+        new_areas = {p.time: p.rel_area_pct for p in ch2.peaks}
+        assert new_areas != original_areas
+
+    def test_method_chaining(self):
+        """set_manual_bounds returns self for fluent chaining."""
+        t, i = _single_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        pk = ch.peaks[0]
+        result = ch.set_manual_bounds(pk.time, left_time=pk.time - 1.0)
+        assert result is ch
+
+    def test_finds_nearest_peak(self):
+        """Should select the peak closest to the given time."""
+        t, i = _two_peak_data()
+        ch = HPLCChromatogram(t, i).smooth().find_peaks()
+        sorted_peaks = sorted(ch.peaks, key=lambda p: p.time)
+        first_pk = sorted_peaks[0]
+        # Use a time closer to the first peak
+        ch.set_manual_bounds(first_pk.time + 0.01, left_time=first_pk.time - 0.2)
+        matching = [p for p in ch.peaks if abs(p.time - first_pk.time) < 0.5]
+        assert len(matching) == 1

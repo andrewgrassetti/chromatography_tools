@@ -310,6 +310,77 @@ class BaseChromatogram(ABC):
         return self
 
     # ------------------------------------------------------------------
+    # Manual peak-bound override
+    # ------------------------------------------------------------------
+
+    def set_manual_bounds(
+        self,
+        peak_time: float,
+        *,
+        left_time: float | None = None,
+        right_time: float | None = None,
+    ) -> "BaseChromatogram":
+        """Override integration bounds for the peak nearest to *peak_time*.
+
+        Only the explicitly supplied bound is changed; the other retains
+        its automatically detected value.  After updating, the method
+        validates the resulting bounds:
+
+        * If the new start index ends up at or beyond the peak apex, the
+          peak is removed (no valid left-side area).
+        * If the new end index ends up at or before the peak apex, the
+          peak is removed (no valid right-side area).
+
+        Parameters
+        ----------
+        peak_time : float
+            Approximate retention time of the peak whose bounds should
+            be adjusted.  The closest detected peak is selected.
+        left_time : float, optional
+            New left (start) bound expressed as a time value.
+        right_time : float, optional
+            New right (end) bound expressed as a time value.
+
+        Returns
+        -------
+        BaseChromatogram
+            ``self``, for method chaining.
+
+        Raises
+        ------
+        RuntimeError
+            If no peaks have been detected yet.
+        ValueError
+            If neither *left_time* nor *right_time* is provided.
+        """
+        if not self.peaks:
+            raise RuntimeError("No peaks detected. Run .find_peaks() first.")
+        if left_time is None and right_time is None:
+            raise ValueError(
+                "At least one of left_time or right_time must be provided."
+            )
+
+        # Find the peak closest to the requested time.
+        pk = min(self.peaks, key=lambda p: abs(p.time - peak_time))
+        x = np.asarray(self.time, dtype=float)
+
+        if left_time is not None:
+            new_start = int(np.searchsorted(x, left_time))
+            new_start = max(0, min(new_start, len(x) - 1))
+            pk.start = new_start
+
+        if right_time is not None:
+            new_end = int(np.searchsorted(x, right_time))
+            new_end = max(0, min(new_end, len(x) - 1))
+            pk.end = new_end
+
+        # Validate: bounds must still straddle the peak apex.
+        if pk.start >= pk.position or pk.end <= pk.position:
+            self.peaks = [p for p in self.peaks if p is not pk]
+
+        return self
+
+    # ------------------------------------------------------------------
     # Peak integration
     # ------------------------------------------------------------------
 
