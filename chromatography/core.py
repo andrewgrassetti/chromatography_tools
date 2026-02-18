@@ -109,7 +109,7 @@ class BaseChromatogram(ABC):
     @property
     def default_min_height_frac(self) -> float:
         """Default minimum peak-height as a fraction of max signal."""
-        return 0.10
+        return 0.05
 
     # ------------------------------------------------------------------
     # Smoothing
@@ -233,7 +233,7 @@ class BaseChromatogram(ABC):
         prominence : float, optional
             Minimum peak prominence (vertical distance from the peak to
             the higher of its two neighbouring bases).  Defaults to
-            ``0.02 * max(signal)``.
+            ``0.01 * max(signal)``.
         distance : int, optional
             Minimum number of samples between neighbouring peaks.
             Defaults to ``max(3, len(signal) // 100)``.
@@ -256,7 +256,7 @@ class BaseChromatogram(ABC):
             min_height if min_height is not None
             else self.default_min_height_frac * y_max
         )
-        prom = prominence if prominence is not None else 0.02 * y_max
+        prom = prominence if prominence is not None else 0.01 * y_max
         dist = distance if distance is not None else max(3, n // 100)
 
         indices, properties = _scipy_find_peaks(
