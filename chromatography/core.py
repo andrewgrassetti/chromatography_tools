@@ -47,8 +47,8 @@ class Peak:
 class BaseChromatogram(ABC):
     """Abstract base class for all chromatogram types.
 
-    Subclasses **must** implement :pymethod:`x_axis_label`,
-    :pymethod:`y_axis_label`, and :pymethod:`technique_name` so that
+    Subclasses **must** implement :meth:`x_axis_label`,
+    :meth:`y_axis_label`, and :meth:`technique_name` so that
     downstream code (plotting, export) can adapt to the data type.
 
     Parameters
@@ -123,9 +123,9 @@ class BaseChromatogram(ABC):
         ----------
         window : int, optional
             Window length (must be odd and ≤ data length).
-            Defaults to :pyattr:`default_smooth_window`.
+            Defaults to :attr:`default_smooth_window`.
         poly : int, optional
-            Polynomial order.  Defaults to :pyattr:`default_smooth_poly`.
+            Polynomial order.  Defaults to :attr:`default_smooth_poly`.
         """
         window = window if window is not None else self.default_smooth_window
         poly = poly if poly is not None else self.default_smooth_poly
@@ -151,7 +151,7 @@ class BaseChromatogram(ABC):
         Raises
         ------
         RuntimeError
-            If :pymeth:`smooth` has not been called first.
+            If :meth:`smooth` has not been called first.
         """
         if self.smoothed is None:
             raise RuntimeError("Smooth the signal first with .smooth()")
@@ -435,7 +435,7 @@ class SECChromatogram(BaseChromatogram):
     mw_calibration : callable, optional
         A function ``f(volume) -> molecular_weight`` that converts
         elution volume to molecular weight.  If provided,
-        :pymeth:`molecular_weights` returns the calibrated values.
+        :meth:`molecular_weights` returns the calibrated values.
     """
 
     def __init__(

@@ -257,8 +257,11 @@ class TestIntegration:
 class TestSECCalibration:
     def test_mw_calibration(self):
         t, i = _single_peak_data()
-        cal = lambda v: 10 ** (10 - 0.5 * v)  # noqa: E731
-        ch = SECChromatogram(t, i, mw_calibration=cal)
+
+        def mw_cal(v: np.ndarray) -> np.ndarray:
+            return 10 ** (10 - 0.5 * v)
+
+        ch = SECChromatogram(t, i, mw_calibration=mw_cal)
         mw = ch.molecular_weights()
         assert mw is not None
         assert len(mw) == len(t)
