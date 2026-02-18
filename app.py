@@ -70,6 +70,13 @@ def _color_palette(n: int) -> list[str]:
     return [VIRIDIS_COLORS[i % len(VIRIDIS_COLORS)] for i in range(n)]
 
 
+def _hex_to_rgba(hex_color: str, alpha: float = 0.15) -> str:
+    """Convert a hex color string to an rgba() string with the given alpha."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
 def _demo_data(seed: int) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     n = 800
@@ -107,6 +114,7 @@ with st.sidebar:
     st.header("Display")
     display_mode = st.radio("Mode", ["Overlay all", "Separate panels"], horizontal=True)
     show_peaks = st.checkbox("Show peaks", value=True)
+    show_bounds = st.checkbox("Show peak bounds", value=False)
     label_peaks = st.checkbox("Label peaks", value=True)
     show_area_pct = st.checkbox("Include % area in labels", value=True)
 
@@ -174,6 +182,19 @@ if display_mode == "Overlay all" or len(chromatograms) == 1:
             name=entry["label"], line=dict(color=colors[idx], width=2),
         ))
         if show_peaks and ch.peaks:
+            if show_bounds:
+                for pk in ch.peaks:
+                    s = max(0, min(pk.start, len(ch.time) - 1))
+                    e = max(0, min(pk.end, len(ch.time) - 1))
+                    fig.add_trace(go.Scatter(
+                        x=ch.time[s : e + 1],
+                        y=ch.intensity[s : e + 1],
+                        fill="tozeroy",
+                        fillcolor=_hex_to_rgba(colors[idx]),
+                        line=dict(width=0),
+                        showlegend=False,
+                        hoverinfo="skip",
+                    ))
             for pk in ch.peaks:
                 fig.add_vline(x=pk.time, line_dash="dot", line_color=colors[idx], opacity=0.6)
                 if label_peaks:
@@ -200,6 +221,19 @@ else:
             name=entry["label"], line=dict(color=colors[idx], width=2), showlegend=False,
         ), row=r + 1, col=c + 1)
         if show_peaks and ch.peaks:
+            if show_bounds:
+                for pk in ch.peaks:
+                    s = max(0, min(pk.start, len(ch.time) - 1))
+                    e = max(0, min(pk.end, len(ch.time) - 1))
+                    fig.add_trace(go.Scatter(
+                        x=ch.time[s : e + 1],
+                        y=ch.intensity[s : e + 1],
+                        fill="tozeroy",
+                        fillcolor=_hex_to_rgba(colors[idx]),
+                        line=dict(width=0),
+                        showlegend=False,
+                        hoverinfo="skip",
+                    ), row=r + 1, col=c + 1)
             for pk in ch.peaks:
                 fig.add_vline(x=pk.time, line_dash="dot", line_color="gray", opacity=0.6, row=r + 1, col=c + 1)
                 if label_peaks:
