@@ -88,7 +88,7 @@ class TestHierarchy:
         assert IonChromatogram(t, i).default_smooth_window == 15
 
         assert GCChromatogram(t, i).default_min_height_frac == 0.05
-        assert HPLCChromatogram(t, i).default_min_height_frac == 0.10
+        assert HPLCChromatogram(t, i).default_min_height_frac == 0.05
 
 
 # ---------------------------------------------------------------------------
