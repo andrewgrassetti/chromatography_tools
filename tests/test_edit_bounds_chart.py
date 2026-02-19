@@ -9,6 +9,9 @@ simultaneous overlay-mode bound updates.
 
 from __future__ import annotations
 
+import io
+import json
+
 import numpy as np
 import plotly.graph_objects as go
 
@@ -363,3 +366,48 @@ class TestSeparatePanelBoundsWithCSVData:
         assert "TestFile.CSV" in filenames_with_bounds
         assert "TestFile2.CSV" in filenames_with_bounds
         assert len(manual_bounds) == 2
+
+
+# ------------------------------------------------------------------
+# Plot image rendering roundtrip (cached helper in app.py)
+# ------------------------------------------------------------------
+
+def _render_plot_image(fig_json: str, fmt: str, width: int, height: int) -> bytes:
+    """Replicate the cached rendering helper from app.py."""
+    restored_fig = go.Figure(json.loads(fig_json))
+    buf = io.BytesIO()
+    restored_fig.write_image(buf, format=fmt, width=width, height=height)
+    return buf.getvalue()
+
+
+class TestRenderPlotImage:
+    """Validate the JSON-roundtrip image rendering used for cached export."""
+
+    @staticmethod
+    def _sample_figure() -> go.Figure:
+        t = np.linspace(0, 20, 200)
+        y = 100 * np.exp(-((t - 10) ** 2) / 8)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=t, y=y, mode="lines", name="sample"))
+        fig.update_layout(template="plotly_white", width=800, height=400)
+        return fig
+
+    def test_png_output_has_valid_header(self):
+        fig = self._sample_figure()
+        data = _render_plot_image(fig.to_json(), "png", 800, 400)
+        assert data[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_svg_output_contains_svg_tag(self):
+        fig = self._sample_figure()
+        data = _render_plot_image(fig.to_json(), "svg", 800, 400)
+        assert b"<svg" in data
+
+    def test_roundtrip_preserves_trace_count(self):
+        fig = self._sample_figure()
+        restored = go.Figure(json.loads(fig.to_json()))
+        assert len(restored.data) == len(fig.data)
+
+    def test_roundtrip_preserves_layout_template(self):
+        fig = self._sample_figure()
+        restored = go.Figure(json.loads(fig.to_json()))
+        assert restored.layout.template == fig.layout.template

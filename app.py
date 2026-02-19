@@ -9,6 +9,7 @@ relative-area calculation.  Supports multiple chromatography techniques
 from __future__ import annotations
 
 import io
+import json
 from typing import Any
 
 import numpy as np
@@ -439,15 +440,29 @@ if st.session_state.manual_bounds:
 fmt_map = {"PNG": "png", "SVG": "svg", "PDF": "pdf"}
 
 
+@st.cache_data(show_spinner=False)
+def _render_plot_image(fig_json: str, fmt: str, width: int, height: int) -> bytes:
+    """Render a Plotly figure to static image bytes (cached).
+
+    Kaleido-based rendering is expensive (~1-2 s per call).  By caching
+    on the serialised figure JSON + export settings, subsequent reruns
+    with an unchanged figure return instantly.
+    """
+    restored_fig = go.Figure(json.loads(fig_json))
+    buf = io.BytesIO()
+    restored_fig.write_image(buf, format=fmt, width=width, height=height)
+    return buf.getvalue()
+
+
 @st.fragment
 def _plot_download_button() -> None:
     """Render the download button for the plot image."""
-    buf = io.BytesIO()
-    fig.write_image(buf, format=fmt_map[plot_fmt], width=plot_w, height=plot_h)
-    buf.seek(0)
+    image_data = _render_plot_image(
+        fig.to_json(), fmt_map[plot_fmt], plot_w, plot_h,
+    )
     st.download_button(
         label=f"Download plot ({plot_fmt})",
-        data=buf,
+        data=image_data,
         file_name=f"chromatograms.{fmt_map[plot_fmt]}",
         mime=f"image/{fmt_map[plot_fmt]}",
     )
