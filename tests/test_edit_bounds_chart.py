@@ -1,7 +1,7 @@
 """Tests for Plotly figure configuration when edit-bounds mode is active.
 
 These tests validate that the chart is properly configured for interactive
-peak-bound selection: crosshair cursor (dragmode="select"), single-click
+peak-bound selection: drag disabled (dragmode=False), single-click
 support (clickmode="event+select"), and invisible markers on line traces
 for reliable point-click detection.
 """
@@ -32,7 +32,7 @@ def _build_sample_figure() -> go.Figure:
 
 def _apply_edit_bounds_config(fig: go.Figure) -> None:
     """Apply the same configuration that app.py applies when edit_bounds is True."""
-    fig.update_layout(dragmode="select", clickmode="event+select")
+    fig.update_layout(dragmode=False, clickmode="event+select")
     for trace_data in fig.data:
         if getattr(trace_data, "mode", None) == "lines":
             trace_data.update(
@@ -42,11 +42,11 @@ def _apply_edit_bounds_config(fig: go.Figure) -> None:
 
 
 class TestEditBoundsChartConfig:
-    def test_dragmode_is_select(self):
-        """dragmode should be 'select' so the cursor is a crosshair."""
+    def test_dragmode_is_disabled(self):
+        """dragmode should be False so click-and-drag selection is disabled."""
         fig = _build_sample_figure()
         _apply_edit_bounds_config(fig)
-        assert fig.layout.dragmode == "select"
+        assert fig.layout.dragmode is False
 
     def test_clickmode_is_event_select(self):
         """clickmode should be 'event+select' so single clicks register."""

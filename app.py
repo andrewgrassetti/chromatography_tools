@@ -295,10 +295,10 @@ else:
 
 # ---- Render chart (with click handling when editing bounds) ----
 if edit_bounds:
-    # Use "select" drag-mode so the cursor is a crosshair (not the pan
-    # 4-arrow icon) and box/point selections actually fire events.
-    # "event+select" lets single clicks on data points register as well.
-    fig.update_layout(dragmode="select", clickmode="event+select")
+    # Disable drag-based selection so that a simple single click is all
+    # the user needs.  "event+select" ensures clicks on data points fire
+    # selection events that Streamlit can capture.
+    fig.update_layout(dragmode=False, clickmode="event+select")
 
     # Add invisible markers to the main line traces so that clicks near
     # the line snap to the nearest data-point — the same x-axis buffer
@@ -314,33 +314,18 @@ if edit_bounds:
         fig,
         use_container_width=True,
         on_select="rerun",
-        selection_mode=("points", "box", "lasso"),
+        selection_mode=("points",),
         key="peak_bound_chart",
     )
-    # Extract the clicked x-coordinate from any selection mode.
+    # Extract the clicked x-coordinate from the point selection.
     clicked_time: float | None = None
     if event and hasattr(event, "selection") and event.selection:
         sel = event.selection
-        # 1) Point selection — use the first selected point's x.
         sel_points = sel.get("points", [])
         if sel_points:
             cx = sel_points[0].get("x")
             if cx is not None:
                 clicked_time = float(cx)
-        # 2) Box selection — use the midpoint of the x range.
-        if clicked_time is None:
-            for box in sel.get("box", []):
-                xs = box.get("x")
-                if xs and len(xs) >= 2:
-                    clicked_time = float((xs[0] + xs[-1]) / 2)
-                    break
-        # 3) Lasso selection — use the mean of the x coordinates.
-        if clicked_time is None:
-            for lasso in sel.get("lasso", []):
-                xs = lasso.get("x")
-                if xs:
-                    clicked_time = float(np.mean(xs))
-                    break
 
     if clicked_time is not None:
         # Find the chromatogram and peak nearest to the click.
