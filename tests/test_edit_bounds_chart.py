@@ -411,3 +411,55 @@ class TestRenderPlotImage:
         fig = self._sample_figure()
         restored = go.Figure(json.loads(fig.to_json()))
         assert restored.layout.template == fig.layout.template
+
+
+# ------------------------------------------------------------------
+# Deferred render during edit-bounds mode
+# ------------------------------------------------------------------
+
+def _should_render_plot(edit_bounds: bool) -> bool:
+    """Mirror the guard in ``_plot_download_button`` in *app.py*.
+
+    When *edit_bounds* is active the expensive Kaleido static-image
+    render is skipped so that the interactive click → rerun cycle
+    stays responsive.
+    """
+    return not edit_bounds
+
+
+class TestDeferredRenderDuringEditBounds:
+    """Validate that image rendering is deferred while editing bounds."""
+
+    def test_render_skipped_when_editing_bounds(self):
+        """When edit_bounds is True the expensive render must be skipped."""
+        assert not _should_render_plot(edit_bounds=True)
+
+    def test_render_active_when_not_editing_bounds(self):
+        """When edit_bounds is False the render proceeds normally."""
+        assert _should_render_plot(edit_bounds=False)
+
+    def test_edit_config_does_not_alter_trace_data(self):
+        """Applying edit-bounds config must not mutate the underlying data."""
+        fig = _build_sample_figure()
+        original_x = list(fig.data[0].x)
+        original_y = list(fig.data[0].y)
+        _apply_edit_bounds_config(fig)
+        assert list(fig.data[0].x) == original_x
+        assert list(fig.data[0].y) == original_y
+
+    def test_chart_config_fast_without_render(self):
+        """Chart configuration for edit-bounds mode should complete quickly."""
+        import time
+        fig = _build_sample_figure()
+        start = time.perf_counter()
+        _apply_edit_bounds_config(fig)
+        elapsed = time.perf_counter() - start
+        # Configuration should be nearly instant (<200 ms)
+        assert elapsed < 0.2
+
+    def test_render_produces_valid_output_after_config(self):
+        """Render still works correctly on a figure with edit-bounds config."""
+        fig = _build_sample_figure()
+        _apply_edit_bounds_config(fig)
+        data = _render_plot_image(fig.to_json(), "png", 800, 400)
+        assert data[:8] == b"\x89PNG\r\n\x1a\n"

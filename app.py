@@ -457,6 +457,12 @@ def _render_plot_image(fig_json: str, fmt: str, width: int, height: int) -> byte
 @st.fragment
 def _plot_download_button() -> None:
     """Render the download button for the plot image."""
+    if edit_bounds:
+        # While interactively editing bounds, skip the expensive Kaleido
+        # static-image render (~1-2 s per call) so that the click → rerun
+        # cycle stays responsive.  The download button reappears as soon
+        # as the user un-checks "Edit peak bounds".
+        return
     image_data = _render_plot_image(
         fig.to_json(), fmt_map[plot_fmt], plot_w, plot_h,
     )
@@ -472,30 +478,41 @@ _plot_download_button()
 
 
 # ---- Summary CSV ----
-rows: list[dict[str, Any]] = []
-for entry in chromatograms:
-    ch = entry["chrom"]
-    base: dict[str, Any] = {
-        "filename": entry["filename"],
-        "nickname": entry["label"],
-        "technique": ch.technique_name,
-        "total_peaks": len(ch.peaks),
-    }
-    if ch.peaks:
-        for i, pk in enumerate(ch.peaks, 1):
-            base[f"peak_{i}_time"] = pk.time
-            base[f"peak_{i}_rel_area"] = pk.rel_area_pct
-    rows.append(base)
+@st.fragment
+def _summary_csv_section() -> None:
+    """Render the peak summary table and CSV download as an isolated fragment.
 
-summary_df = pd.DataFrame(rows)
-st.subheader("Peak Summary")
-st.dataframe(summary_df, use_container_width=True)
+    Running inside ``@st.fragment`` prevents the download-button click from
+    triggering an expensive full-page rerun (which would include the Kaleido
+    static-image render when edit_bounds is off).
+    """
+    rows: list[dict[str, Any]] = []
+    for entry in chromatograms:
+        ch = entry["chrom"]
+        base: dict[str, Any] = {
+            "filename": entry["filename"],
+            "nickname": entry["label"],
+            "technique": ch.technique_name,
+            "total_peaks": len(ch.peaks),
+        }
+        if ch.peaks:
+            for i, pk in enumerate(ch.peaks, 1):
+                base[f"peak_{i}_time"] = pk.time
+                base[f"peak_{i}_rel_area"] = pk.rel_area_pct
+        rows.append(base)
 
-csv_buf = io.StringIO()
-summary_df.to_csv(csv_buf, index=False)
-st.download_button(
-    label="Download summary CSV",
-    data=csv_buf.getvalue(),
-    file_name="chromatogram_summary.csv",
-    mime="text/csv",
-)
+    summary_df = pd.DataFrame(rows)
+    st.subheader("Peak Summary")
+    st.dataframe(summary_df, use_container_width=True)
+
+    csv_buf = io.StringIO()
+    summary_df.to_csv(csv_buf, index=False)
+    st.download_button(
+        label="Download summary CSV",
+        data=csv_buf.getvalue(),
+        file_name="chromatogram_summary.csv",
+        mime="text/csv",
+    )
+
+
+_summary_csv_section()
