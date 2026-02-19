@@ -1,18 +1,8 @@
-# R history and workspace
-.Rhistory
-.RData
-.Rproj.user/
-.Ruserdata
-
 # macOS artifacts
 .DS_Store
 
 # VS Code
 .vscode/*.log
-
-# renv package management
-renv/library/
-.Rprofile.user
 
 # Data directories
 data/raw/
