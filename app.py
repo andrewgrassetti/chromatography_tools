@@ -217,6 +217,9 @@ y_label = chromatograms[0]["chrom"].y_axis_label
 
 # ---- Plotting ----
 colors = _color_palette(len(chromatograms))
+# Mapping from Plotly trace index → chromatogram list index, used in
+# separate-panels mode to identify which panel was clicked.
+trace_to_chrom_idx: dict[int, int] = {}
 
 if display_mode == "Overlay all" or len(chromatograms) == 1:
     fig = go.Figure()
@@ -260,13 +263,16 @@ else:
     ncols = min(2, n)
     nrows = (n + ncols - 1) // ncols
     fig = make_subplots(rows=nrows, cols=ncols, subplot_titles=[e["label"] for e in chromatograms])
+    _trace_count = 0
     for idx, entry in enumerate(chromatograms):
         r, c = divmod(idx, ncols)
         ch = entry["chrom"]
+        trace_to_chrom_idx[_trace_count] = idx
         fig.add_trace(go.Scatter(
             x=ch.time, y=ch.intensity, mode="lines",
             name=entry["label"], line=dict(color=colors[idx], width=2), showlegend=False,
         ), row=r + 1, col=c + 1)
+        _trace_count += 1
         if show_peaks and ch.peaks:
             if show_bounds:
                 for pi, pk in enumerate(ch.peaks):
@@ -282,6 +288,7 @@ else:
                         showlegend=False,
                         hoverinfo="skip",
                     ), row=r + 1, col=c + 1)
+                    _trace_count += 1
             if label_peaks:
                 y_max = float(np.nanmax(ch.intensity))
                 yshifts = _label_yshifts(ch.peaks, y_max)
@@ -325,8 +332,9 @@ if edit_bounds:
         selection_mode=("points",),
         key="peak_bound_chart",
     )
-    # Extract the clicked x-coordinate from the point selection.
+    # Extract the clicked x-coordinate and curve number from the point selection.
     clicked_time: float | None = None
+    clicked_curve: int | None = None
     if event and hasattr(event, "selection") and event.selection:
         sel = event.selection
         sel_points = sel.get("points", [])
@@ -334,6 +342,9 @@ if edit_bounds:
             cx = sel_points[0].get("x")
             if cx is not None:
                 clicked_time = float(cx)
+            cn = sel_points[0].get("curve_number")
+            if cn is not None:
+                clicked_curve = int(cn)
 
     if clicked_time is not None:
         overlay_active = display_mode == "Overlay all" and len(chromatograms) > 1
@@ -354,29 +365,50 @@ if edit_bounds:
                 st.session_state.manual_bounds[key] = existing
             st.rerun()
         else:
-            # Single-chromatogram / separate-panels mode: set bounds for
-            # the single nearest peak across all chromatograms.
-            best_entry = None
-            best_peak = None
-            best_dist = float("inf")
-            for entry in chromatograms:
-                ch = entry["chrom"]
-                for pk in ch.peaks:
-                    d = abs(pk.time - clicked_time)
-                    if d < best_dist:
-                        best_dist = d
-                        best_peak = pk
-                        best_entry = entry
+            # Separate-panels mode: use the curve_number from the click
+            # event to identify which panel was clicked, then set bounds
+            # only for that chromatogram's nearest peak.
+            target_entry = None
+            if clicked_curve is not None and clicked_curve in trace_to_chrom_idx:
+                target_entry = chromatograms[trace_to_chrom_idx[clicked_curve]]
 
-            if best_peak is not None and best_entry is not None:
-                key = (best_entry["filename"], best_peak.time)
-                existing = st.session_state.manual_bounds.get(key, {})
-                if clicked_time < best_peak.time:
-                    existing["left_time"] = clicked_time
-                else:
-                    existing["right_time"] = clicked_time
-                st.session_state.manual_bounds[key] = existing
-                st.rerun()
+            if target_entry is not None:
+                ch = target_entry["chrom"]
+                if ch.peaks:
+                    nearest_pk = min(ch.peaks, key=lambda pk: abs(pk.time - clicked_time))
+                    key = (target_entry["filename"], nearest_pk.time)
+                    existing = st.session_state.manual_bounds.get(key, {})
+                    if clicked_time < nearest_pk.time:
+                        existing["left_time"] = clicked_time
+                    else:
+                        existing["right_time"] = clicked_time
+                    st.session_state.manual_bounds[key] = existing
+                    st.rerun()
+            else:
+                # Fallback when curve_number is unavailable (single file
+                # or unexpected event shape): find the nearest peak
+                # across all chromatograms.
+                best_entry = None
+                best_peak = None
+                best_dist = float("inf")
+                for entry in chromatograms:
+                    ch = entry["chrom"]
+                    for pk in ch.peaks:
+                        d = abs(pk.time - clicked_time)
+                        if d < best_dist:
+                            best_dist = d
+                            best_peak = pk
+                            best_entry = entry
+
+                if best_peak is not None and best_entry is not None:
+                    key = (best_entry["filename"], best_peak.time)
+                    existing = st.session_state.manual_bounds.get(key, {})
+                    if clicked_time < best_peak.time:
+                        existing["left_time"] = clicked_time
+                    else:
+                        existing["right_time"] = clicked_time
+                    st.session_state.manual_bounds[key] = existing
+                    st.rerun()
 else:
     st.plotly_chart(fig, use_container_width=True)
 
