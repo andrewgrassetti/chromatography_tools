@@ -441,17 +441,16 @@ fmt_map = {"PNG": "png", "SVG": "svg", "PDF": "pdf"}
 
 @st.fragment
 def _plot_download_button() -> None:
-    """Render the download button and only generate the image on click."""
-    if st.button(f"Download plot ({plot_fmt})"):
-        buf = io.BytesIO()
-        fig.write_image(buf, format=fmt_map[plot_fmt], width=plot_w, height=plot_h)
-        buf.seek(0)
-        st.download_button(
-            label=f"Save {plot_fmt}",
-            data=buf,
-            file_name=f"chromatograms.{fmt_map[plot_fmt]}",
-            mime=f"image/{fmt_map[plot_fmt]}",
-        )
+    """Render the download button for the plot image."""
+    buf = io.BytesIO()
+    fig.write_image(buf, format=fmt_map[plot_fmt], width=plot_w, height=plot_h)
+    buf.seek(0)
+    st.download_button(
+        label=f"Download plot ({plot_fmt})",
+        data=buf,
+        file_name=f"chromatograms.{fmt_map[plot_fmt]}",
+        mime=f"image/{fmt_map[plot_fmt]}",
+    )
 
 
 _plot_download_button()
