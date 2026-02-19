@@ -121,27 +121,50 @@ def _simulate_overlay_click(chromatograms, clicked_time, manual_bounds):
         manual_bounds[key] = existing
 
 
-def _simulate_single_click(chromatograms, clicked_time, manual_bounds):
-    """Replicate the single-chromatogram click handler from app.py."""
-    best_entry = None
-    best_peak = None
-    best_dist = float("inf")
-    for entry in chromatograms:
-        ch = entry["chrom"]
-        for pk in ch.peaks:
-            d = abs(pk.time - clicked_time)
-            if d < best_dist:
-                best_dist = d
-                best_peak = pk
-                best_entry = entry
-    if best_peak is not None and best_entry is not None:
-        key = (best_entry["filename"], best_peak.time)
-        existing = manual_bounds.get(key, {})
-        if clicked_time < best_peak.time:
-            existing["left_time"] = clicked_time
-        else:
-            existing["right_time"] = clicked_time
-        manual_bounds[key] = existing
+def _simulate_single_click(chromatograms, clicked_time, manual_bounds,
+                           clicked_curve=None, trace_to_chrom_idx=None):
+    """Replicate the separate-panels click handler from app.py.
+
+    When *clicked_curve* and *trace_to_chrom_idx* are provided the
+    function targets only the chromatogram whose line trace was clicked.
+    Otherwise it falls back to finding the single nearest peak across
+    all chromatograms.
+    """
+    target_entry = None
+    if clicked_curve is not None and trace_to_chrom_idx and clicked_curve in trace_to_chrom_idx:
+        target_entry = chromatograms[trace_to_chrom_idx[clicked_curve]]
+
+    if target_entry is not None:
+        ch = target_entry["chrom"]
+        if ch.peaks:
+            nearest_pk = min(ch.peaks, key=lambda pk: abs(pk.time - clicked_time))
+            key = (target_entry["filename"], nearest_pk.time)
+            existing = manual_bounds.get(key, {})
+            if clicked_time < nearest_pk.time:
+                existing["left_time"] = clicked_time
+            else:
+                existing["right_time"] = clicked_time
+            manual_bounds[key] = existing
+    else:
+        best_entry = None
+        best_peak = None
+        best_dist = float("inf")
+        for entry in chromatograms:
+            ch = entry["chrom"]
+            for pk in ch.peaks:
+                d = abs(pk.time - clicked_time)
+                if d < best_dist:
+                    best_dist = d
+                    best_peak = pk
+                    best_entry = entry
+        if best_peak is not None and best_entry is not None:
+            key = (best_entry["filename"], best_peak.time)
+            existing = manual_bounds.get(key, {})
+            if clicked_time < best_peak.time:
+                existing["left_time"] = clicked_time
+            else:
+                existing["right_time"] = clicked_time
+            manual_bounds[key] = existing
 
 
 class TestOverlayBoundsClick:
@@ -201,3 +224,142 @@ class TestOverlayBoundsClick:
         filenames_with_bounds = {k[0] for k in manual_bounds}
         assert "file1.csv" in filenames_with_bounds
         assert "file2.csv" not in filenames_with_bounds
+
+
+class TestSeparatePanelBoundsClick:
+    """Validate that separate-panel clicks only affect the clicked panel's chromatogram."""
+
+    def _two_chromatogram_entries(self):
+        """Create two chromatogram entries with peaks at distinct positions."""
+        rng = np.random.default_rng(42)
+        t = np.linspace(0, 20, 400)
+        y1 = _make_gaussian(t, 100, 8, 1.5) + rng.normal(scale=2, size=len(t))
+        y2 = _make_gaussian(t, 80, 12, 1.3) + rng.normal(scale=2, size=len(t))
+        entry1 = _make_chromatogram_entry("file1.csv", t, y1)
+        entry2 = _make_chromatogram_entry("file2.csv", t, y2)
+        return [entry1, entry2]
+
+    def test_click_on_second_panel_affects_only_second_chromatogram(self):
+        """Clicking on the second panel should only set bounds for file2."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        # trace 0 → chromatogram 0, trace 1 → chromatogram 1
+        trace_map = {0: 0, 1: 1}
+        _simulate_single_click(entries, 11.0, manual_bounds,
+                               clicked_curve=1, trace_to_chrom_idx=trace_map)
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "file2.csv" in filenames_with_bounds
+        assert "file1.csv" not in filenames_with_bounds
+
+    def test_click_on_first_panel_affects_only_first_chromatogram(self):
+        """Clicking on the first panel should only set bounds for file1."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        trace_map = {0: 0, 1: 1}
+        _simulate_single_click(entries, 7.0, manual_bounds,
+                               clicked_curve=0, trace_to_chrom_idx=trace_map)
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "file1.csv" in filenames_with_bounds
+        assert "file2.csv" not in filenames_with_bounds
+
+    def test_fallback_without_curve_number(self):
+        """Without curve_number, falls back to nearest-peak-across-all behaviour."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        _simulate_single_click(entries, 7.0, manual_bounds)
+        assert len(manual_bounds) == 1
+
+    def test_click_left_of_apex_sets_left_bound(self):
+        """A click left of the panel's peak sets left_time."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        trace_map = {0: 0, 1: 1}
+        _simulate_single_click(entries, 11.0, manual_bounds,
+                               clicked_curve=1, trace_to_chrom_idx=trace_map)
+        for bounds in manual_bounds.values():
+            assert "left_time" in bounds
+            assert bounds["left_time"] == 11.0
+
+    def test_click_right_of_apex_sets_right_bound(self):
+        """A click right of the panel's peak sets right_time."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        trace_map = {0: 0, 1: 1}
+        _simulate_single_click(entries, 14.0, manual_bounds,
+                               clicked_curve=1, trace_to_chrom_idx=trace_map)
+        for bounds in manual_bounds.values():
+            assert "right_time" in bounds
+            assert bounds["right_time"] == 14.0
+
+    def test_trace_map_with_fill_traces(self):
+        """Trace map handles gaps from fill traces (e.g. trace 0→chrom 0, trace 3→chrom 1)."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        # Simulate: chrom 0 has line at trace 0 + 2 fill traces, chrom 1 line at trace 3
+        trace_map = {0: 0, 3: 1}
+        _simulate_single_click(entries, 11.0, manual_bounds,
+                               clicked_curve=3, trace_to_chrom_idx=trace_map)
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "file2.csv" in filenames_with_bounds
+        assert "file1.csv" not in filenames_with_bounds
+
+
+class TestSeparatePanelBoundsWithCSVData:
+    """Validate separate-panel click targeting with real CSV data files."""
+
+    @staticmethod
+    def _load_csv_entry(filename):
+        """Load a CSV test file into a chromatogram entry dict."""
+        import os
+        import pandas as pd
+        csv_path = os.path.join(os.path.dirname(__file__), filename)
+        df = pd.read_csv(csv_path, header=None)
+        df.columns = ["time", "intensity"]
+        return _make_chromatogram_entry(filename, df["time"].values, df["intensity"].values)
+
+    def test_click_on_second_csv_panel_targets_only_second_file(self):
+        """Clicking the panel for TestFile2.CSV should only set bounds for that file."""
+        entry1 = self._load_csv_entry("TestFile.CSV")
+        entry2 = self._load_csv_entry("TestFile2.CSV")
+        entries = [entry1, entry2]
+        manual_bounds: dict = {}
+        trace_map = {0: 0, 1: 1}
+        # Click near TestFile2.CSV's first peak (~10.94)
+        _simulate_single_click(entries, 10.0, manual_bounds,
+                               clicked_curve=1, trace_to_chrom_idx=trace_map)
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "TestFile2.CSV" in filenames_with_bounds
+        assert "TestFile.CSV" not in filenames_with_bounds
+
+    def test_click_on_first_csv_panel_targets_only_first_file(self):
+        """Clicking the panel for TestFile.CSV should only set bounds for that file."""
+        entry1 = self._load_csv_entry("TestFile.CSV")
+        entry2 = self._load_csv_entry("TestFile2.CSV")
+        entries = [entry1, entry2]
+        manual_bounds: dict = {}
+        trace_map = {0: 0, 1: 1}
+        # Click near TestFile.CSV's first peak (~15.26)
+        _simulate_single_click(entries, 14.5, manual_bounds,
+                               clicked_curve=0, trace_to_chrom_idx=trace_map)
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "TestFile.CSV" in filenames_with_bounds
+        assert "TestFile2.CSV" not in filenames_with_bounds
+
+    def test_independent_bounds_per_panel_from_csv(self):
+        """Each panel can have its own bounds set independently."""
+        entry1 = self._load_csv_entry("TestFile.CSV")
+        entry2 = self._load_csv_entry("TestFile2.CSV")
+        entries = [entry1, entry2]
+        manual_bounds: dict = {}
+        trace_map = {0: 0, 1: 1}
+        # Set a left bound on the first panel near TestFile.CSV's peak at ~15.26
+        _simulate_single_click(entries, 14.5, manual_bounds,
+                               clicked_curve=0, trace_to_chrom_idx=trace_map)
+        # Set a left bound on the second panel near TestFile2.CSV's peak at ~10.94
+        _simulate_single_click(entries, 10.0, manual_bounds,
+                               clicked_curve=1, trace_to_chrom_idx=trace_map)
+        # Both files should have independent bounds
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "TestFile.CSV" in filenames_with_bounds
+        assert "TestFile2.CSV" in filenames_with_bounds
+        assert len(manual_bounds) == 2
