@@ -302,3 +302,64 @@ class TestSeparatePanelBoundsClick:
         filenames_with_bounds = {k[0] for k in manual_bounds}
         assert "file2.csv" in filenames_with_bounds
         assert "file1.csv" not in filenames_with_bounds
+
+
+class TestSeparatePanelBoundsWithCSVData:
+    """Validate separate-panel click targeting with real CSV data files."""
+
+    @staticmethod
+    def _load_csv_entry(filename):
+        """Load a CSV test file into a chromatogram entry dict."""
+        import os
+        import pandas as pd
+        csv_path = os.path.join(os.path.dirname(__file__), filename)
+        df = pd.read_csv(csv_path, header=None)
+        df.columns = ["time", "intensity"]
+        return _make_chromatogram_entry(filename, df["time"].values, df["intensity"].values)
+
+    def test_click_on_second_csv_panel_targets_only_second_file(self):
+        """Clicking the panel for TestFile2.CSV should only set bounds for that file."""
+        entry1 = self._load_csv_entry("TestFile.CSV")
+        entry2 = self._load_csv_entry("TestFile2.CSV")
+        entries = [entry1, entry2]
+        manual_bounds: dict = {}
+        trace_map = {0: 0, 1: 1}
+        # Click near TestFile2.CSV's first peak (~10.94)
+        _simulate_single_click(entries, 10.0, manual_bounds,
+                               clicked_curve=1, trace_to_chrom_idx=trace_map)
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "TestFile2.CSV" in filenames_with_bounds
+        assert "TestFile.CSV" not in filenames_with_bounds
+
+    def test_click_on_first_csv_panel_targets_only_first_file(self):
+        """Clicking the panel for TestFile.CSV should only set bounds for that file."""
+        entry1 = self._load_csv_entry("TestFile.CSV")
+        entry2 = self._load_csv_entry("TestFile2.CSV")
+        entries = [entry1, entry2]
+        manual_bounds: dict = {}
+        trace_map = {0: 0, 1: 1}
+        # Click near TestFile.CSV's first peak (~15.26)
+        _simulate_single_click(entries, 14.5, manual_bounds,
+                               clicked_curve=0, trace_to_chrom_idx=trace_map)
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "TestFile.CSV" in filenames_with_bounds
+        assert "TestFile2.CSV" not in filenames_with_bounds
+
+    def test_independent_bounds_per_panel_from_csv(self):
+        """Each panel can have its own bounds set independently."""
+        entry1 = self._load_csv_entry("TestFile.CSV")
+        entry2 = self._load_csv_entry("TestFile2.CSV")
+        entries = [entry1, entry2]
+        manual_bounds: dict = {}
+        trace_map = {0: 0, 1: 1}
+        # Set a left bound on the first panel near TestFile.CSV's peak at ~15.26
+        _simulate_single_click(entries, 14.5, manual_bounds,
+                               clicked_curve=0, trace_to_chrom_idx=trace_map)
+        # Set a left bound on the second panel near TestFile2.CSV's peak at ~10.94
+        _simulate_single_click(entries, 10.0, manual_bounds,
+                               clicked_curve=1, trace_to_chrom_idx=trace_map)
+        # Both files should have independent bounds
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "TestFile.CSV" in filenames_with_bounds
+        assert "TestFile2.CSV" in filenames_with_bounds
+        assert len(manual_bounds) == 2
