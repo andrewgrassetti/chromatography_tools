@@ -5,6 +5,8 @@ Upload one or multiple CSV files containing `(time, intensity)` pairs and the ap
 
 The core library uses an **object-oriented class hierarchy** so that technique-specific defaults (axis labels, smoothing parameters, detection thresholds) are built-in for HPLC, GC, SEC/GPC, and Ion Chromatography — while all shared signal-processing logic lives in a single abstract base class.
 
+> **📖 New to the app?** See the [Step-by-Step User Guide](docs/USER_GUIDE.md) with screenshots.
+
 ---
 
 ## Features
