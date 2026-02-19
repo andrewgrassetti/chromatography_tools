@@ -295,6 +295,21 @@ else:
 
 # ---- Render chart (with click handling when editing bounds) ----
 if edit_bounds:
+    # Use "select" drag-mode so the cursor is a crosshair (not the pan
+    # 4-arrow icon) and box/point selections actually fire events.
+    # "event+select" lets single clicks on data points register as well.
+    fig.update_layout(dragmode="select", clickmode="event+select")
+
+    # Add invisible markers to the main line traces so that clicks near
+    # the line snap to the nearest data-point — the same x-axis buffer
+    # the hover already provides.
+    for trace_data in fig.data:
+        if getattr(trace_data, "mode", None) == "lines":
+            trace_data.update(
+                mode="lines+markers",
+                marker=dict(size=8, opacity=0),
+            )
+
     event = st.plotly_chart(
         fig,
         use_container_width=True,
