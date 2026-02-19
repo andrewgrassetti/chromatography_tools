@@ -22,5 +22,9 @@ dev = [
     "pytest>=7.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["chromatography*"]
+exclude = ["tests"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
