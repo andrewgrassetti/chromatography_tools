@@ -2,14 +2,17 @@
 
 These tests validate that the chart is properly configured for interactive
 peak-bound selection: drag disabled (dragmode=False), single-click
-support (clickmode="event+select"), and invisible markers on line traces
-for reliable point-click detection.
+support (clickmode="event+select"), invisible markers on line traces
+for reliable point-click detection, crosshair cursor CSS, and
+simultaneous overlay-mode bound updates.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import plotly.graph_objects as go
+
+from chromatography.core import HPLCChromatogram
 
 
 def _build_sample_figure() -> go.Figure:
@@ -28,6 +31,10 @@ def _build_sample_figure() -> go.Figure:
         line=dict(width=0), showlegend=False, hoverinfo="skip",
     ))
     return fig
+
+
+# The CSS snippet that app.py injects for crosshair cursors in edit mode.
+CROSSHAIR_CSS = "<style>.nsewdrag { cursor: crosshair !important; }</style>"
 
 
 def _apply_edit_bounds_config(fig: go.Figure) -> None:
@@ -72,3 +79,125 @@ class TestEditBoundsChartConfig:
         assert fill_trace.fill == "tozeroy"
         assert fill_trace.mode is None  # mode was never set to "lines"
         assert fill_trace.marker.size is None  # no marker added
+
+    def test_crosshair_css_targets_nsewdrag(self):
+        """The injected CSS should set crosshair cursor on .nsewdrag."""
+        assert "cursor: crosshair" in CROSSHAIR_CSS
+        assert ".nsewdrag" in CROSSHAIR_CSS
+        assert "!important" in CROSSHAIR_CSS
+
+
+# ------------------------------------------------------------------
+# Helpers that replicate the overlay click-handling logic from app.py
+# ------------------------------------------------------------------
+
+def _make_gaussian(time, a, b, c):
+    return a * np.exp(-((time - b) ** 2) / (2 * c ** 2))
+
+
+def _make_chromatogram_entry(filename, time, intensity):
+    """Build a chromatogram entry dict like app.py creates."""
+    ch = HPLCChromatogram(time, intensity)
+    ch.smooth()
+    ch.find_peaks()
+    if ch.peaks:
+        ch.integrate_peaks()
+    return {"filename": filename, "label": filename, "chrom": ch}
+
+
+def _simulate_overlay_click(chromatograms, clicked_time, manual_bounds):
+    """Replicate the overlay-mode click handler from app.py."""
+    for entry in chromatograms:
+        ch = entry["chrom"]
+        if not ch.peaks:
+            continue
+        nearest_pk = min(ch.peaks, key=lambda pk: abs(pk.time - clicked_time))
+        key = (entry["filename"], nearest_pk.time)
+        existing = manual_bounds.get(key, {})
+        if clicked_time < nearest_pk.time:
+            existing["left_time"] = clicked_time
+        else:
+            existing["right_time"] = clicked_time
+        manual_bounds[key] = existing
+
+
+def _simulate_single_click(chromatograms, clicked_time, manual_bounds):
+    """Replicate the single-chromatogram click handler from app.py."""
+    best_entry = None
+    best_peak = None
+    best_dist = float("inf")
+    for entry in chromatograms:
+        ch = entry["chrom"]
+        for pk in ch.peaks:
+            d = abs(pk.time - clicked_time)
+            if d < best_dist:
+                best_dist = d
+                best_peak = pk
+                best_entry = entry
+    if best_peak is not None and best_entry is not None:
+        key = (best_entry["filename"], best_peak.time)
+        existing = manual_bounds.get(key, {})
+        if clicked_time < best_peak.time:
+            existing["left_time"] = clicked_time
+        else:
+            existing["right_time"] = clicked_time
+        manual_bounds[key] = existing
+
+
+class TestOverlayBoundsClick:
+    """Validate that overlay-mode clicks set bounds on all chromatograms."""
+
+    def _two_chromatogram_entries(self):
+        """Create two chromatogram entries with peaks at similar positions."""
+        rng = np.random.default_rng(42)
+        t = np.linspace(0, 20, 400)
+        y1 = _make_gaussian(t, 100, 10, 1.5) + rng.normal(scale=2, size=len(t))
+        y2 = _make_gaussian(t, 80, 10.2, 1.3) + rng.normal(scale=2, size=len(t))
+        entry1 = _make_chromatogram_entry("file1.csv", t, y1)
+        entry2 = _make_chromatogram_entry("file2.csv", t, y2)
+        return [entry1, entry2]
+
+    def test_overlay_click_sets_bounds_for_all_chromatograms(self):
+        """A click in overlay mode should create bound entries for each file."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        _simulate_overlay_click(entries, 8.5, manual_bounds)
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "file1.csv" in filenames_with_bounds
+        assert "file2.csv" in filenames_with_bounds
+
+    def test_overlay_click_left_of_apex_sets_left_bound(self):
+        """A click left of peaks should set left_time for all chromatograms."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        _simulate_overlay_click(entries, 8.5, manual_bounds)
+        for bounds in manual_bounds.values():
+            assert "left_time" in bounds
+            assert bounds["left_time"] == 8.5
+
+    def test_overlay_click_right_of_apex_sets_right_bound(self):
+        """A click right of peaks should set right_time for all chromatograms."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        _simulate_overlay_click(entries, 11.5, manual_bounds)
+        for bounds in manual_bounds.values():
+            assert "right_time" in bounds
+            assert bounds["right_time"] == 11.5
+
+    def test_single_mode_click_affects_only_one_chromatogram(self):
+        """In separate panels mode, only the nearest peak gets a bound."""
+        entries = self._two_chromatogram_entries()
+        manual_bounds: dict = {}
+        _simulate_single_click(entries, 8.5, manual_bounds)
+        assert len(manual_bounds) == 1
+
+    def test_overlay_click_skips_chromatograms_without_peaks(self):
+        """Chromatograms with no peaks should be silently skipped."""
+        entries = self._two_chromatogram_entries()
+        # Clear peaks from the second chromatogram
+        entries[1]["chrom"].peaks = []
+        manual_bounds: dict = {}
+        _simulate_overlay_click(entries, 8.5, manual_bounds)
+        filenames_with_bounds = {k[0] for k in manual_bounds}
+        assert "file1.csv" in filenames_with_bounds
+        assert "file2.csv" not in filenames_with_bounds

@@ -300,6 +300,14 @@ if edit_bounds:
     # selection events that Streamlit can capture.
     fig.update_layout(dragmode=False, clickmode="event+select")
 
+    # Show a crosshair cursor instead of the default pan/zoom arrow
+    # when editing bounds.  The Plotly drag-layer element (.nsewdrag)
+    # controls the cursor shown over the plot area.
+    st.markdown(
+        "<style>.nsewdrag { cursor: crosshair !important; }</style>",
+        unsafe_allow_html=True,
+    )
+
     # Add invisible markers to the main line traces so that clicks near
     # the line snap to the nearest data-point — the same x-axis buffer
     # the hover already provides.
@@ -328,31 +336,47 @@ if edit_bounds:
                 clicked_time = float(cx)
 
     if clicked_time is not None:
-        # Find the chromatogram and peak nearest to the click.
-        best_entry = None
-        best_peak = None
-        best_dist = float("inf")
-        for entry in chromatograms:
-            ch = entry["chrom"]
-            for pk in ch.peaks:
-                d = abs(pk.time - clicked_time)
-                if d < best_dist:
-                    best_dist = d
-                    best_peak = pk
-                    best_entry = entry
-
-        if best_peak is not None and best_entry is not None:
-            key = (best_entry["filename"], best_peak.time)
-            existing = st.session_state.manual_bounds.get(key, {})
-            # Auto-detect which bound to set: clicks left of the
-            # peak apex adjust the left bound, clicks to the right
-            # adjust the right bound.
-            if clicked_time < best_peak.time:
-                existing["left_time"] = clicked_time
-            else:
-                existing["right_time"] = clicked_time
-            st.session_state.manual_bounds[key] = existing
+        overlay_active = display_mode == "Overlay all" and len(chromatograms) > 1
+        if overlay_active:
+            # In overlay mode, simultaneously set bounds for the nearest
+            # peak in every chromatogram at the same x-axis position.
+            for entry in chromatograms:
+                ch = entry["chrom"]
+                if not ch.peaks:
+                    continue
+                nearest_pk = min(ch.peaks, key=lambda pk: abs(pk.time - clicked_time))
+                key = (entry["filename"], nearest_pk.time)
+                existing = st.session_state.manual_bounds.get(key, {})
+                if clicked_time < nearest_pk.time:
+                    existing["left_time"] = clicked_time
+                else:
+                    existing["right_time"] = clicked_time
+                st.session_state.manual_bounds[key] = existing
             st.rerun()
+        else:
+            # Single-chromatogram / separate-panels mode: set bounds for
+            # the single nearest peak across all chromatograms.
+            best_entry = None
+            best_peak = None
+            best_dist = float("inf")
+            for entry in chromatograms:
+                ch = entry["chrom"]
+                for pk in ch.peaks:
+                    d = abs(pk.time - clicked_time)
+                    if d < best_dist:
+                        best_dist = d
+                        best_peak = pk
+                        best_entry = entry
+
+            if best_peak is not None and best_entry is not None:
+                key = (best_entry["filename"], best_peak.time)
+                existing = st.session_state.manual_bounds.get(key, {})
+                if clicked_time < best_peak.time:
+                    existing["left_time"] = clicked_time
+                else:
+                    existing["right_time"] = clicked_time
+                st.session_state.manual_bounds[key] = existing
+                st.rerun()
 else:
     st.plotly_chart(fig, use_container_width=True)
 
